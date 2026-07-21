@@ -19,25 +19,14 @@ WATCHLIST_JSON = os.path.join(BASE_DIR, "watchlist.json")
 CONFIG_JSON = os.path.join(BASE_DIR, "system_config.json")
 CRUCIX_REPORTS_DIR = os.path.join(BASE_DIR, "AI_Stock_Reports")
 
-VERSION = "V1.915"
+VERSION = "V1.715"
 IS_PRO = False  # 由 pulse_pro.py 覆蓋為 True
 CHANGELOG = [
-    # === July 20, 2026 (12 fixes) ===
-    ("V1.812", "Feature release V1.8 + 12 same-day fixes"),
-    # Individual: sell commission, realtime_feed multi-market, CN auto-suffix, TWO market,
-    #   cache fallback on error, stray ? removal, yfinance refactor, TTL cache integration,
-    #   auto-extend TTL on market close, 30s default refresh + tooltip, watchlist batch fetch,
-    #   threading.Lock + atomic JSON write + Pulse rebrand (logo/slogan)
-
-    # === July 21, 2026 (15 fixes) ===
-    ("V1.915", "V1.9 enhancements + 15 same-day fixes"),
-    # Refactors: PULSE_HOME env var, Free/Pro split architecture, local Tailwind CSS build,
-    #   form accessibility (labels/id/for), bilingual changelog, field labels i18n
-    # Bug fixes: checkTargetAlerts undefined, deleteTickerFromCategory/draggedCat is_pro block,
-    #   config overwrite Pro fields, JS escape single quotes, duplicate capital_recovered key,
-    #   HK$ hardcode in realtime_feed, grid-cols Free/Pro, EUR/GBP FX direction,
-    #   cache fallback for 0.0 API response, onkeypress JS escape for cat_name
+    ("V1.5", "Initial release: multi-market dashboard, buy/sell, i18n, watchlist, multi-currency"),
+    ("V1.612", "V1.6 + 12 fixes: yfinance refactor, batch fetch, TTL cache, atomic write, TWO market, Pulse rebrand"),
+    ("V1.715", "V1.7 + 15 fixes: PULSE_HOME, Free/Pro split, local CSS, form labels, JS escape, EUR/GBP FX, cache fallback"),
 ]
+
 DEFAULT_CONFIG = {
     "api_key": "", "refresh_interval": 30, "language": "zh_tw",
     "ai_provider": "gemini", "ai_model": "gemini-2.5-flash",
