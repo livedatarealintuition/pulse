@@ -19,45 +19,25 @@ WATCHLIST_JSON = os.path.join(BASE_DIR, "watchlist.json")
 CONFIG_JSON = os.path.join(BASE_DIR, "system_config.json")
 CRUCIX_REPORTS_DIR = os.path.join(BASE_DIR, "AI_Stock_Reports")
 
-VERSION = "V2.0"
+VERSION = "V1.915"
 IS_PRO = False  # 由 pulse_pro.py 覆蓋為 True
 CHANGELOG = [
-    ("V1.0", "Initial release: portfolio dashboard with buy/sell, real-time quotes / 初始版本"),
-    ("V1.1", "i18n (zh_TW/zh_CN/EN), real-time cost estimation / 三語言 + 預計成本"),
-    ("V1.2", "Total ROI display, capital recovery tracker (💰 badge) / 總 ROI + 資金回收"),
-    ("V1.3", "Editable watchlist sidebar (category/ticker CRUD) / 可編輯自選股"),
-    ("V1.4", "Watchlist drag-and-drop reorder + target price alerts / 拖曳排序 + 目標價"),
-    ("V1.5", "Target alerts: DOM-based instant check, no reload / DOM 即時檢查"),
-    ("V1.6", "Multi-currency (HKD/CNY/TWD/JPY/EUR/GBP) / 多貨幣支援"),
-    ("V1.7", "Market status dots (US/HK/CN/TW), zoneinfo timezone / 市場狀態圓點"),
-    ("V1.8", "Market tabs, multi-market buy/sell, AJAX trading, auto zero-pad / 市場篩選"),
-    ("V1.81", "Fix: deduct sell commission from total proceeds / 賣出佣金扣除"),
-    ("V1.82", "Fix: realtime_feed updates when any market is open / 多市場更新"),
-    ("V1.83", "Fix: auto-detect CN suffix .SS/.SZ by ticker prefix / CN 後綴偵測"),
-    ("V1.84", "Fix: add TWO market (Taiwan OTC) support / TWO 上櫃市場"),
-    ("V1.85", "Fix: fallback to cached price on API error instead of 0.0 / 快取 fallback"),
-    ("V1.86", "Fix: remove stray ? from price ID / 移除多餘 ? 符號"),
-    ("V1.861", "Refactor: migrate to yfinance library + batch fetch / yfinance 庫"),
-    ("V1.862", "Optimize: TTL cache integrated with batch fetch / TTL 快取"),
-    ("V1.863", "Optimize: auto-extend cache TTL to 4h when markets closed / 休市延長"),
-    ("V1.864", "Tweak: default refresh 30s + tooltip + min 10s (i18n) / 預設 30s"),
-    ("V1.865", "Fix: watchlist uses batch fetch (was N individual calls) / 批次查詢"),
-    ("V1.866", "Fix: threading.Lock + atomic write for JSON race condition / Lock+atomic"),
-    ("V1.867", "Refactor: PULSE_HOME env var for portable deployment / 環境變數"),
-    ("V1.868", "Refactor: Free/Pro split (IS_PRO flag + Jinja2 guards) / 雙版本"),
-    ("V1.869", "Fix: checkTargetAlerts() undefined in Free mode / JS error"),
-    ("V1.9", "Enhance: local Tailwind CSS build (45KB), accessibility labels, form restructure"),
-    ("V1.91", "Fix: deleteTickerFromCategory / draggedCat in wrong is_pro block"),
-    ("V1.92", "Fix: Free mode no longer overwrites Pro config fields on save"),
-    ("V1.93", "Fix: JS escape for watchlist category names with single quotes"),
-    ("V1.94", "Cleanup: remove duplicate capital_recovered key (dead code)"),
-    ("V1.95", "Fix: realtime_feed uses dynamic currency from config instead of hardcoded HK$"),
-    ("V1.96", "Fix: Free mode top card grid uses 2 cols (was 3, leaving blank space)"),
-    ("V1.97", "Fix: EUR/GBP FX rate direction (Yahoo quotes indirect, use division)"),
-    ("V1.98", "Fix: fallback to cached price when API returns 0.0 (false danger alert)"),
-    ("V1.99", "UI: add field labels to buy/sell forms, commission single-column"),
-]
+    # === July 20, 2026 (12 fixes) ===
+    ("V1.812", "Feature release V1.8 + 12 same-day fixes"),
+    # Individual: sell commission, realtime_feed multi-market, CN auto-suffix, TWO market,
+    #   cache fallback on error, stray ? removal, yfinance refactor, TTL cache integration,
+    #   auto-extend TTL on market close, 30s default refresh + tooltip, watchlist batch fetch,
+    #   threading.Lock + atomic JSON write + Pulse rebrand (logo/slogan)
 
+    # === July 21, 2026 (15 fixes) ===
+    ("V1.915", "V1.9 enhancements + 15 same-day fixes"),
+    # Refactors: PULSE_HOME env var, Free/Pro split architecture, local Tailwind CSS build,
+    #   form accessibility (labels/id/for), bilingual changelog, field labels i18n
+    # Bug fixes: checkTargetAlerts undefined, deleteTickerFromCategory/draggedCat is_pro block,
+    #   config overwrite Pro fields, JS escape single quotes, duplicate capital_recovered key,
+    #   HK$ hardcode in realtime_feed, grid-cols Free/Pro, EUR/GBP FX direction,
+    #   cache fallback for 0.0 API response, onkeypress JS escape for cat_name
+]
 DEFAULT_CONFIG = {
     "api_key": "", "refresh_interval": 30, "language": "zh_tw",
     "ai_provider": "gemini", "ai_model": "gemini-2.5-flash",
