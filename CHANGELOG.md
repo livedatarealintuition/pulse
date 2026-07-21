@@ -1,6 +1,6 @@
 # Changelog
 
-## V1.915 — July 21, 2026 (V1.9 + 15 fixes)
+## V1.715 — July 21, 2026 (15 fixes)
 
 **Enhancements:**
 - PULSE_HOME environment variable for portable deployment
@@ -25,7 +25,7 @@
 
 ---
 
-## V1.812 — July 20, 2026 (V1.8 + 12 fixes)
+## V1.612 — July 20, 2026 (12 fixes)
 
 **Features:**
 - Multi-market buy/sell, AJAX trading, auto zero-padding
@@ -52,7 +52,7 @@
 
 ---
 
-## V1.8 — July 19, 2026
+## V1.5 — July 19, 2026
 
 - Initial multi-market portfolio dashboard
 - Real-time quotes, buy/sell trade management
