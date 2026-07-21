@@ -19,42 +19,43 @@ WATCHLIST_JSON = os.path.join(BASE_DIR, "watchlist.json")
 CONFIG_JSON = os.path.join(BASE_DIR, "system_config.json")
 CRUCIX_REPORTS_DIR = os.path.join(BASE_DIR, "AI_Stock_Reports")
 
-VERSION = "V1.98"
+VERSION = "V2.0"
 IS_PRO = False  # 由 pulse_pro.py 覆蓋為 True
 CHANGELOG = [
-    ("V1.0", "初始版本：股票持倉儀表板、買入/賣出、即時報價"),
-    ("V1.1", "三語言 i18n（繁中/簡中/EN）、預計成本即時計算"),
-    ("V1.2", "總 ROI 顯示、資金回收追蹤（💰 徽章 + 提示）"),
-    ("V1.3", "可編輯 Watchlist 側欄（分組/股票 CRUD）"),
-    ("V1.4", "Watchlist 拖曳排序 + 目標價通知"),
-    ("V1.5", "目標價通知：DOM 即時檢查、不 reload 設定"),
-    ("V1.6", "多貨幣支援（HKD/CNY/TWD/JPY/EUR/GBP）"),
-    ("V1.7", "多市場狀態圓點（US/HK/CN/TW）、zoneinfo 時區"),
-    ("V1.8", "市場標籤篩選、多市場買入/賣出、AJAX 交易不刷新、自動補零、賣出下拉分組"),
-    ("V1.81", "Bug fix: calculate_portfolio_matrix() 賣出總收入扣除賣出佣金，修正 ROI/PnL 高估問題"),
-    ("V1.82", "Bug fix: realtime_feed 不再被美股時間卡死，改為任一市場開市即更新（US/HK/CN/TW）"),
-    ("V1.83", "Bug fix: CN 市場後綴改為自動偵測上海(.SS)/深圳(.SZ)（依據股票代碼前綴）"),
-    ("V1.84", "Bug fix: 新增 TWO 市場支援（台灣上櫃/櫃買中心），含後綴、市場狀態圓點、篩選標籤"),
-    ("V1.85", "Bug fix: get_realtime_data/fetch_atr_20 網路錯誤改用快取價格取代歸零，避免假止損/目標警報"),
-    ("V1.86", "Bug fix: 移除 price-{{ stock.ticker }} ID 中多餘的 ? 符號"),
-    ("V1.861", "Refactor: 數據層改用 yfinance 庫 (自動 Cookie/Crumb + 批次查詢 _batch_fetch_prices)"),
-    ("V1.862", "Optimize: _batch_fetch_prices 整合 TTL 快取 — 僅對過期 ticker 批次查詢 yfinance"),
-    ("V1.863", "Optimize: 休市時自動延長快取至 4h (get_effective_ttl)，避免無效請求"),
-    ("V1.864", "Tweak: 預設刷新頻率 30s + tooltip 說明 API 限制 + min 10s (三語言)"),
-    ("V1.865", "Bug fix: build_watchlist_html 改用 _batch_fetch_prices 批次查詢，消滅 N 次獨立 API 請求"),
-    ("V1.866", "Bug fix: save_json_file 加入 threading.Lock + atomic write，防止 race condition 損毀"),
-    ("V1.867", "Refactor: 硬編碼路徑改為 PULSE_HOME 環境變數，支援可攜部署"),
-    ("V1.868", "Refactor: 拆分 Free/Pro 雙版本 (pulse_free.py + pulse_pro.py)，IS_PRO flag + Jinja2 guard"),
-    ("V1.869", "Bug fix: Free 版 checkTargetAlerts() 未定義導致 JS error"),
-    ("V1.9", "Enhance: 替換 CDN Tailwind 為本地 production build (45KB minified)、無障礙標籤修復、設定表單重組"),
-    ("V1.91", "Bug fix: deleteTickerFromCategory / draggedCat 誤入 is_pro block，Free 版 JS ReferenceError"),
-    ("V1.92", "Bug fix: Free 版儲存設定時不再清空 Pro 欄位 (api_key/ai_model)，僅 Pro 版寫入"),
-    ("V1.93", "Bug fix: 自選股分類名稱含單引號時 escape JS 語法，避免 onclick 解析錯誤"),
-    ("V1.94", "Code cleanup: 移除 calculate_portfolio_matrix() 中 capital_recovered 重複 key（死碼）"),
-    ("V1.95", "Bug fix: realtime_feed 不再硬寫 HK$，改為動態讀取 config 設定的顯示貨幣"),
-    ("V1.96", "Bug fix: Free 版頂部卡片 grid 改為 2 欄 (原 3 欄，Pro 欄位隱藏後留白)"),
-    ("V1.97", "Bug fix: EUR/GBP 匯率換算方向修正 (Yahoo 間接報價，改為除法)"),
-    ("V1.98", "Bug fix: API 回傳 0.0 時 fallback 到快取價格，避免假止蝕警報"),
+    ("V1.0", "Initial release: portfolio dashboard with buy/sell, real-time quotes / 初始版本"),
+    ("V1.1", "i18n (zh_TW/zh_CN/EN), real-time cost estimation / 三語言 + 預計成本"),
+    ("V1.2", "Total ROI display, capital recovery tracker (💰 badge) / 總 ROI + 資金回收"),
+    ("V1.3", "Editable watchlist sidebar (category/ticker CRUD) / 可編輯自選股"),
+    ("V1.4", "Watchlist drag-and-drop reorder + target price alerts / 拖曳排序 + 目標價"),
+    ("V1.5", "Target alerts: DOM-based instant check, no reload / DOM 即時檢查"),
+    ("V1.6", "Multi-currency (HKD/CNY/TWD/JPY/EUR/GBP) / 多貨幣支援"),
+    ("V1.7", "Market status dots (US/HK/CN/TW), zoneinfo timezone / 市場狀態圓點"),
+    ("V1.8", "Market tabs, multi-market buy/sell, AJAX trading, auto zero-pad / 市場篩選"),
+    ("V1.81", "Fix: deduct sell commission from total proceeds / 賣出佣金扣除"),
+    ("V1.82", "Fix: realtime_feed updates when any market is open / 多市場更新"),
+    ("V1.83", "Fix: auto-detect CN suffix .SS/.SZ by ticker prefix / CN 後綴偵測"),
+    ("V1.84", "Fix: add TWO market (Taiwan OTC) support / TWO 上櫃市場"),
+    ("V1.85", "Fix: fallback to cached price on API error instead of 0.0 / 快取 fallback"),
+    ("V1.86", "Fix: remove stray ? from price ID / 移除多餘 ? 符號"),
+    ("V1.861", "Refactor: migrate to yfinance library + batch fetch / yfinance 庫"),
+    ("V1.862", "Optimize: TTL cache integrated with batch fetch / TTL 快取"),
+    ("V1.863", "Optimize: auto-extend cache TTL to 4h when markets closed / 休市延長"),
+    ("V1.864", "Tweak: default refresh 30s + tooltip + min 10s (i18n) / 預設 30s"),
+    ("V1.865", "Fix: watchlist uses batch fetch (was N individual calls) / 批次查詢"),
+    ("V1.866", "Fix: threading.Lock + atomic write for JSON race condition / Lock+atomic"),
+    ("V1.867", "Refactor: PULSE_HOME env var for portable deployment / 環境變數"),
+    ("V1.868", "Refactor: Free/Pro split (IS_PRO flag + Jinja2 guards) / 雙版本"),
+    ("V1.869", "Fix: checkTargetAlerts() undefined in Free mode / JS error"),
+    ("V1.9", "Enhance: local Tailwind CSS build (45KB), accessibility labels, form restructure"),
+    ("V1.91", "Fix: deleteTickerFromCategory / draggedCat in wrong is_pro block"),
+    ("V1.92", "Fix: Free mode no longer overwrites Pro config fields on save"),
+    ("V1.93", "Fix: JS escape for watchlist category names with single quotes"),
+    ("V1.94", "Cleanup: remove duplicate capital_recovered key (dead code)"),
+    ("V1.95", "Fix: realtime_feed uses dynamic currency from config instead of hardcoded HK$"),
+    ("V1.96", "Fix: Free mode top card grid uses 2 cols (was 3, leaving blank space)"),
+    ("V1.97", "Fix: EUR/GBP FX rate direction (Yahoo quotes indirect, use division)"),
+    ("V1.98", "Fix: fallback to cached price when API returns 0.0 (false danger alert)"),
+    ("V1.99", "UI: add field labels to buy/sell forms, commission single-column"),
 ]
 
 DEFAULT_CONFIG = {
@@ -67,14 +68,14 @@ DEFAULT_CONFIG = {
 TRANSLATIONS = {
     "zh_tw": {
         "title": "Pulse", "subtitle": "Live Data · Real Intuition",
-        "auto_refresh_label": "⏱️ 自動更新頻率:", "refresh_tooltip": "Yahoo Finance API 限制，建議 ≥30 秒以避免請求過多。休市時自動延長至數小時。", "ai_report_btn": "⚡ 產生AI報告",
+        "auto_refresh_label": "⏱️ 更新 (秒):", "refresh_tooltip": "Yahoo Finance API 限制，建議 ≥30 秒以避免請求過多。休市時自動延長至數小時。", "ai_report_btn": "⚡ 產生AI報告",
         "total_mv_label": "當前持倉總市值", "total_pnl_label": "🚨 全局持倉盈虧 (PnL)",
         "summary_label": "📊 Summary 時間鎖狀態",
         "buy_title": "🟢 新增股票持倉", "buy_ticker_ph": "ASTS", "buy_price_ph": "價格",
-        "buy_shares_ph": "股數", "buy_confirm": "確認買入", "buy_est_cost": "預計成本",
+        "buy_shares_ph": "股數", "buy_confirm": "確認買入", "buy_est_cost": "預計成本", "ticker_label": "代碼", "market_label": "市場", "date_label": "日期", "price_label": "單價", "shares_label": "股數", "commission_label": "手續費",
         "sell_title": "🔴 賣出股票持倉", "sell_select_ticker": "-- 選擇股票 --",
         "sell_price_ph": "價格", "sell_shares_ph": "股數",
-        "sell_confirm": "確認賣出", "sell_est_income": "預計收入",
+        "sell_confirm": "確認賣出", "sell_est_income": "預計收入", "sell_ticker_label": "選擇股票", "sell_date_label": "日期", "sell_price_label": "單價", "sell_shares_label": "股數", "sell_commission_label": "手續費",
         "table_expand": "展開", "table_ticker": "股票", "table_shares": "總持股",
         "tab_all": "全部",
         "table_avg_price": "平衡價", "table_current_price": "即時現價與日變動",
@@ -94,14 +95,14 @@ TRANSLATIONS = {
     },
     "zh_cn": {
         "title": "Pulse", "subtitle": "Live Data · Real Intuition",
-        "auto_refresh_label": "⏱️ 自动更新频率:", "refresh_tooltip": "Yahoo Finance API 限制，建议 ≥30 秒以避免请求过多。休市时自动延长至数小时。", "ai_report_btn": "⚡ 生成AI报告",
+        "auto_refresh_label": "⏱️ 更新 (秒):", "refresh_tooltip": "Yahoo Finance API 限制，建议 ≥30 秒以避免请求过多。休市时自动延长至数小时。", "ai_report_btn": "⚡ 生成AI报告",
         "total_mv_label": "当前持仓总市值", "total_pnl_label": "🚨 全局持仓盈亏 (PnL)",
         "summary_label": "📊 Summary 时间锁状态",
         "buy_title": "🟢 新增股票持仓", "buy_ticker_ph": "ASTS", "buy_price_ph": "价格",
-        "buy_shares_ph": "股数", "buy_confirm": "确认买入", "buy_est_cost": "预计成本",
+        "buy_shares_ph": "股数", "buy_confirm": "确认买入", "buy_est_cost": "预计成本", "ticker_label": "代码", "market_label": "市场", "date_label": "日期", "price_label": "单价", "shares_label": "股数", "commission_label": "手续费",
         "sell_title": "🔴 卖出股票持仓", "sell_select_ticker": "-- 选择股票 --",
         "sell_price_ph": "价格", "sell_shares_ph": "股数",
-        "sell_confirm": "确认卖出", "sell_est_income": "预计收入",
+        "sell_confirm": "确认卖出", "sell_est_income": "预计收入", "sell_ticker_label": "选择股票", "sell_date_label": "日期", "sell_price_label": "单价", "sell_shares_label": "股数", "sell_commission_label": "手续费",
         "table_expand": "展开", "table_ticker": "股票", "table_shares": "总持股",
         "tab_all": "全部",
         "table_avg_price": "平衡价", "table_current_price": "即时现价与日变动",
@@ -121,15 +122,15 @@ TRANSLATIONS = {
     },
     "en": {
         "title": "Pulse", "subtitle": "Live Data · Real Intuition",
-        "auto_refresh_label": "\u23f1\ufe0f Auto-refresh:", "refresh_tooltip": "Yahoo Finance API rate limit. Recommend \u226530s to avoid excessive requests. Auto-extends to hours when markets closed.", "ai_report_btn": "\u26a1 Generate AI Report",
+        "auto_refresh_label": "\u23f1\ufe0f Refresh (sec):", "refresh_tooltip": "Yahoo Finance API rate limit. Recommend \u226530s to avoid excessive requests. Auto-extends to hours when markets closed.", "ai_report_btn": "\u26a1 Generate AI Report",
         "total_mv_label": "Total Market Value", "total_pnl_label": "🚨 Total P&L",
         "summary_label": "📊 Summary Cooldown Status",
         "target_alert_title": "🎯 Price Alerts", "target_set_btn": "🎯", "target_set_prompt": "Set target price (USD)", "target_reached": "Target reached", "target_alert_hit": "Hit target", "target_alert_current": "Now", "market_open": "🟢 Open", "market_closed": "🔴 Closed",
         "buy_title": "🟢 Add Position", "buy_ticker_ph": "ASTS", "buy_price_ph": "Price",
-        "buy_shares_ph": "Shares", "buy_confirm": "Confirm Buy", "buy_est_cost": "Est. Cost",
+        "buy_shares_ph": "Shares", "buy_confirm": "Confirm Buy", "buy_est_cost": "Est. Cost", "ticker_label": "Ticker", "market_label": "Market", "date_label": "Date", "price_label": "Price", "shares_label": "Shares", "commission_label": "Commission",
         "sell_title": "🔴 Sell Position", "sell_select_ticker": "-- Select Ticker --",
         "sell_price_ph": "Price", "sell_shares_ph": "Shares",
-        "sell_confirm": "Confirm Sell", "sell_est_income": "Est. Proceeds",
+        "sell_confirm": "Confirm Sell", "sell_est_income": "Est. Proceeds", "sell_ticker_label": "Ticker", "sell_date_label": "Date", "sell_price_label": "Price", "sell_shares_label": "Shares", "sell_commission_label": "Commission",
         "table_expand": "Expand", "table_ticker": "Ticker", "table_shares": "Total Shares",
         "tab_all": "All",
         "table_avg_price": "Avg Cost", "table_current_price": "Price & Day Change",
@@ -667,44 +668,25 @@ def index():
             <div class="grid grid-cols-2 gap-6 mb-8">
                 <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl border-l-4 border-l-emerald-500">
                     <h3 class="text-md font-black text-emerald-400 mb-4">{{ t.buy_title }}</h3>
-                    <form id="buy-form" class="grid grid-cols-2 gap-4 text-xs" onsubmit="submitTrade(event, 'buy')">
-                        <input type="text" name="ticker" id="buy-ticker" placeholder="{{ t.buy_ticker_ph }}" required class="bg-slate-950 border border-slate-800 rounded p-2 font-mono uppercase">
-                        <select name="market" id="buy-market" class="bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-bold">
-                            <option value="US">US</option>
-                            <option value="HK">HK</option>
-                            <option value="CN">CN</option>
-                            <option value="TW">TW</option>
-                            <option value="TWO">TWO</option>
-                        </select>
-                        <input type="date" name="buy_date" id="buy-date" value="{{ today_date }}" required class="bg-slate-950 border border-slate-800 rounded p-2">
-                        <input type="number" step="0.0001" name="buy_price" id="buy-price" placeholder="{{ t.buy_price_ph }}" required class="bg-slate-950 border border-slate-800 rounded p-2">
-                        <input type="number" name="buy_shares" id="buy-shares" placeholder="{{ t.buy_shares_ph }}" required class="bg-slate-950 border border-slate-800 rounded p-2">
-                        <input type="number" step="0.01" name="buy_commission" value="0.00" class="col-span-2 bg-slate-950 border border-slate-800 rounded p-2">
+                    <form id="buy-form" class="grid grid-cols-2 gap-3 text-xs" onsubmit="submitTrade(event, 'buy')">
+                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5">{{ t.ticker_label }}</label><input type="text" name="ticker" id="buy-ticker" placeholder="{{ t.buy_ticker_ph }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2 font-mono uppercase"></div>
+                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5">{{ t.market_label }}</label><select name="market" id="buy-market" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-bold"><option value="US">US</option><option value="HK">HK</option><option value="CN">CN</option><option value="TW">TW</option><option value="TWO">TWO</option></select></div>
+                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5">{{ t.date_label }}</label><input type="date" name="buy_date" id="buy-date" value="{{ today_date }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
+                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5">{{ t.price_label }}</label><input type="number" step="0.0001" name="buy_price" id="buy-price" placeholder="{{ t.buy_price_ph }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
+                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5">{{ t.shares_label }}</label><input type="number" name="buy_shares" id="buy-shares" placeholder="{{ t.buy_shares_ph }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
+                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5">{{ t.commission_label }}</label><input type="number" step="0.01" name="buy_commission" value="0.00" class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
                         <button type="submit" class="col-span-2 py-2 bg-emerald-600 hover:bg-emerald-700 font-bold rounded">{{ t.buy_confirm }}</button>
                         <div id="buy-estimated-cost" class="col-span-2 text-center text-xs font-mono text-emerald-300 mt-1">{{ t.buy_est_cost }}: $0.00</div>
                     </form>
                 </div>
                 <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl border-l-4 border-l-rose-500">
                     <h3 class="text-md font-black text-rose-400 mb-4">{{ t.sell_title }}</h3>
-                    <form id="sell-form" class="grid grid-cols-2 gap-4 text-xs" onsubmit="submitTrade(event, 'sell')">
-                        <select name="ticker" id="sell-ticker" required class="bg-slate-950 border border-slate-800 rounded p-2 font-bold">
-                            <option value="">{{ t.sell_select_ticker }}</option>
-                            {% set ns = namespace(current_market='') %}
-                            {% for tk in open_tickers %}
-                            {% set m = ticker_market.get(tk, 'US') %}
-                            {% if m != ns.current_market %}
-                            {% if ns.current_market != '' %}</optgroup>{% endif %}
-                            <optgroup label="{{ m }}">
-                            {% set ns.current_market = m %}
-                            {% endif %}
-                            <option value="{{ tk }}">{{ tk }}</option>
-                            {% endfor %}
-                            </optgroup>
-                        </select>
-                        <input type="date" name="sell_date" id="sell-date" value="{{ today_date }}" required class="bg-slate-950 border border-slate-800 rounded p-2">
-                        <input type="number" step="0.0001" name="sell_price" id="sell-price" placeholder="{{ t.sell_price_ph }}" required class="bg-slate-950 border border-slate-800 rounded p-2">
-                        <input type="number" name="sell_shares" id="sell-shares" placeholder="{{ t.sell_shares_ph }}" required class="bg-slate-950 border border-slate-800 rounded p-2">
-                        <input type="number" step="0.01" name="sell_commission" value="0.00" class="col-span-2 bg-slate-950 border border-slate-800 rounded p-2">
+                    <form id="sell-form" class="grid grid-cols-2 gap-3 text-xs" onsubmit="submitTrade(event, 'sell')">
+                        <div class="col-span-2"><label class="block text-slate-500 text-[10px] font-bold mb-0.5">{{ t.sell_ticker_label }}</label><select name="ticker" id="sell-ticker" required class="w-full bg-slate-950 border border-slate-800 rounded p-2 font-bold"><option value="">{{ t.sell_select_ticker }}</option>{% set ns = namespace(current_market='') %}{% for tk in open_tickers %}{% set m = ticker_market.get(tk, 'US') %}{% if m != ns.current_market %}{% if ns.current_market != '' %}</optgroup>{% endif %}<optgroup label="{{ m }}">{% set ns.current_market = m %}{% endif %}<option value="{{ tk }}">{{ tk }}</option>{% endfor %}</optgroup></select></div>
+                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5">{{ t.sell_date_label }}</label><input type="date" name="sell_date" id="sell-date" value="{{ today_date }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
+                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5">{{ t.sell_price_label }}</label><input type="number" step="0.0001" name="sell_price" id="sell-price" placeholder="{{ t.sell_price_ph }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
+                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5">{{ t.sell_shares_label }}</label><input type="number" name="sell_shares" id="sell-shares" placeholder="{{ t.sell_shares_ph }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
+                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5">{{ t.sell_commission_label }}</label><input type="number" step="0.01" name="sell_commission" value="0.00" class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
                         <button type="submit" class="col-span-2 py-2 bg-rose-600 hover:bg-rose-700 font-bold rounded">{{ t.sell_confirm }}</button>
                         <div id="sell-estimated-cost" class="col-span-2 text-center text-xs font-mono text-rose-300 mt-1">{{ t.sell_est_income }}: $0.00</div>
                     </form>
