@@ -1,0 +1,62 @@
+# === Pulse — Free Version .gitignore ===
+
+# Pro version (not for public release)
+pulse_pro.py
+
+# Legacy / old versions
+portfolio_dashboard.py
+*.bak*
+*.bak_V*
+
+# User data (local portfolio, watchlist, config)
+portfolio.json
+watchlist.json
+system_config.json
+
+# API keys & secrets
+.env
+*.key
+*.pem
+credentials.json
+
+# Generated AI reports
+AI_Stock_Reports/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Flask / runtime
+*.log
+dashboard.log
+flask_portfolio.log
+*.sock
+
+# Temp files
+*.tmp
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.sublime-*
+
+# OS
+__MACOSX/
+
+# Tailwind build temp
+input.css
+
+# Tailwind build temp
+pulse_classes.html
+input.css

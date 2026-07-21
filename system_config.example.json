@@ -1,0 +1,9 @@
+{
+    "api_key": "",
+    "refresh_interval": 30,
+    "language": "zh_tw",
+    "ai_provider": "gemini",
+    "ai_model": "gemini-2.5-flash",
+    "custom_api_url": "https://generativelanguage.googleapis.com/v1beta/models/",
+    "secondary_currency": "HKD"
+}
