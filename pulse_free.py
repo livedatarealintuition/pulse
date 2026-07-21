@@ -19,7 +19,7 @@ WATCHLIST_JSON = os.path.join(BASE_DIR, "watchlist.json")
 CONFIG_JSON = os.path.join(BASE_DIR, "system_config.json")
 CRUCIX_REPORTS_DIR = os.path.join(BASE_DIR, "AI_Stock_Reports")
 
-VERSION = "V1.95"
+VERSION = "V1.98"
 IS_PRO = False  # 由 pulse_pro.py 覆蓋為 True
 CHANGELOG = [
     ("V1.0", "初始版本：股票持倉儀表板、買入/賣出、即時報價"),
@@ -52,6 +52,9 @@ CHANGELOG = [
     ("V1.93", "Bug fix: 自選股分類名稱含單引號時 escape JS 語法，避免 onclick 解析錯誤"),
     ("V1.94", "Code cleanup: 移除 calculate_portfolio_matrix() 中 capital_recovered 重複 key（死碼）"),
     ("V1.95", "Bug fix: realtime_feed 不再硬寫 HK$，改為動態讀取 config 設定的顯示貨幣"),
+    ("V1.96", "Bug fix: Free 版頂部卡片 grid 改為 2 欄 (原 3 欄，Pro 欄位隱藏後留白)"),
+    ("V1.97", "Bug fix: EUR/GBP 匯率換算方向修正 (Yahoo 間接報價，改為除法)"),
+    ("V1.98", "Bug fix: API 回傳 0.0 時 fallback 到快取價格，避免假止蝕警報"),
 ]
 
 DEFAULT_CONFIG = {
@@ -218,7 +221,11 @@ def _batch_fetch_prices(tickers_list):
                     prev = float(fi.previous_close) if fi.previous_close else 0.0
                     if price > 0:
                         PRICE_CACHE[sym] = {'price': price, 'prev_close': prev, 'ts': now}
-                    results[sym] = {'price': price, 'prev_close': prev}
+                        results[sym] = {'price': price, 'prev_close': prev}
+                    elif cached:
+                        results[sym] = {'price': cached['price'], 'prev_close': cached['prev_close']}
+                    else:
+                        results[sym] = {'price': 0.0, 'prev_close': 0.0}
                 except Exception:
                     # Fallback to cache even if expired — better than 0.0
                     cached = PRICE_CACHE.get(sym)
@@ -247,6 +254,9 @@ def get_realtime_data(ticker):
         prev = float(fi.previous_close) if fi.previous_close else 0.0
         if price > 0:
             PRICE_CACHE[ticker] = {'price': price, 'prev_close': prev, 'ts': datetime.now()}
+        elif cached:
+            # API returned 0.0 — fall back to last known good price
+            return {'price': cached['price'], 'prev_close': cached['prev_close'], 'stale': True}
         return {'price': price, 'prev_close': prev, 'stale': False}
     except Exception as e:
         if cached:
@@ -328,6 +338,8 @@ def calculate_portfolio_matrix():
     config = load_config()
     sec_cur = config.get("secondary_currency", "HKD")
     usd_hkd = get_fx_rate(sec_cur) or get_usd_hkd_rate()
+    if sec_cur in ("EUR", "GBP") and usd_hkd:
+        usd_hkd = 1.0 / usd_hkd  # Yahoo quotes EUR/GBP as 1 CUR = X USD (indirect)
     aggregated = {}
     
     # 掃描原始流水帳，一邊分類一邊保留它在原始陣列的「絕對位置 index」
@@ -443,7 +455,7 @@ def build_watchlist_html(t):
                 <button onclick="deleteCategory('{esc_cat}')" class="text-[10px] text-slate-600 hover:text-rose-400 transition-colors">{wl_del_label}</button>
             </div>
             <div class="flex gap-1 mb-2">
-                <input type="text" name="ticker" id="wl-input-{cat_name}" placeholder="{wl_placeholder}" class="wl-ticker-input bg-slate-900 border border-slate-800 text-[11px] p-1 rounded w-full uppercase focus:outline-none" onkeypress="if(event.key==='Enter') addTickerToCategory('{cat_name}', this)">
+                <input type="text" name="ticker" id="wl-input-{cat_name}" placeholder="{wl_placeholder}" class="wl-ticker-input bg-slate-900 border border-slate-800 text-[11px] p-1 rounded w-full uppercase focus:outline-none" onkeypress="if(event.key==='Enter') addTickerToCategory('{esc_cat}', this)">
                 <button onclick="addTickerToCategory('{esc_cat}', this)" class="bg-slate-800 text-xs px-2 rounded hover:bg-slate-700 transition-colors">+</button>
             </div>
             <div class="space-y-1">
@@ -630,7 +642,7 @@ def index():
             </div>
 
             <!-- 三大數據卡片 -->
-            <div class="grid grid-cols-3 gap-6 mb-8">
+            <div class="grid {% if is_pro %}grid-cols-3{% else %}grid-cols-2{% endif %} gap-6 mb-8">
                 <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl">
                     <p class="text-slate-400 text-xs font-bold uppercase">{{ t.total_mv_label }} (USD / {{ sec_cur }})</p>
                     <p id="top-total-mv-usd" class="text-3xl font-black text-cyan-400 mt-2">${{ "{:,.2f}".format(total_mv_usd) }}</p>
