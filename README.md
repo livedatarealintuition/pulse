@@ -9,6 +9,18 @@ A lightweight, self-hosted multi-market portfolio dashboard. Track your stock ho
 
 ---
 
+## Screenshots
+
+| Dashboard | Watchlist |
+|:---------:|:---------:|
+| ![Pulse Dashboard](screenshots/dashboard.png) | ![Watchlist](screenshots/watchlist.png) |
+
+| Settings | Multi-Currency |
+|:--------:|:--------------:|
+| ![Settings](screenshots/settings.png) | ![Currency](screenshots/currency.png) |
+
+---
+
 ## Features
 
 ### Multi-Market Portfolio
