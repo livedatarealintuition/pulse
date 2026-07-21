@@ -44,12 +44,13 @@ A lightweight, self-hosted multi-market portfolio dashboard. Track your stock ho
 - Atomic JSON writes (threading.Lock + os.replace)
 - Configurable refresh interval (10s–∞, default 30s)
 
-### Pro Upgrade
-Pulse has a **Pro tier** with additional features:
+### Pro Upgrade 🚧 Coming Soon
+Pulse will have a **Pro tier** with additional features (currently in development):
 - ⚡ AI audit reports (portfolio health analysis)
 - 🎯 Target price alerts
 - AI provider/model configuration
-See [`pulse_pro.py`](https://github.com/your/pulse) for details.
+
+Stay tuned — these features are actively being built.
 
 ---
 
@@ -62,7 +63,7 @@ See [`pulse_pro.py`](https://github.com/your/pulse) for details.
 ### Install
 
 ```bash
-git clone https://github.com/your/pulse.git
+git clone https://github.com/livedatarealintuition/pulse.git
 cd pulse
 pip install -r requirements.txt
 ```
@@ -177,6 +178,6 @@ Pulse runs entirely on your machine. **No data ever leaves your server.**
 
 ---
 
-## Pro Version
+## Pro Version 🚧 Coming Soon
 
-Pulse Pro adds AI-powered portfolio analysis, target price alerts, and flexible AI backend configuration. Contact the author or check the repository for upgrade information.
+Pulse Pro (AI-powered portfolio analysis, target price alerts, AI backend configuration) is currently in development. Stay tuned for release.
