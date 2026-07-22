@@ -22,14 +22,12 @@ CONFIG_JSON = os.path.join(BASE_DIR, "system_config.json")
 VERSION = "V1.820"
 IS_PRO = False  # 由 pulse_pro.py 覆蓋為 True
 CHANGELOG = [
-    ("V1.820", "Editable prompt (strict/balanced/relaxed), prompt mode toggle, i18n rebuild"),
-    ("V1.815", "API key confirm, smart error i18n, Weight%, Market Dist, Cash Ratio"),
-    ("V1.87", "Modal, label a11y, JS fix, i18n prompt, settings tabs, timeout"),
-    ("V1.8", "AI Audit: rich portfolio prompt + local inference presets (Ollama/vLLM/LM Studio)"),
-    ("V1.716", "Remove Crucix macro report integration"),
-    ("V1.715", "PULSE_HOME, Free/Pro split, local CSS, form labels, JS escape, EUR/GBP FX"),
-    ("V1.612", "yfinance refactor, batch fetch, TTL cache, atomic write, TWO market, Pulse rebrand"),
-    ("V1.5", "Initial release: multi-market, buy/sell, i18n, watchlist, multi-currency"),
+    ("V1.820", "[Session 8] 20 items: Editable prompt (3 levels), mode toggle, i18n rebuild, Weight%, Market Dist, Cash Ratio, API confirm, smart errors, settings tabs, timeout, modal, label a11y"),
+    ("V1.8", "[Session 8] AI Audit: rich portfolio prompt + local inference presets (Ollama/vLLM/LM Studio)"),
+    ("V1.716", "[Session 7] Remove Crucix macro report integration"),
+    ("V1.715", "[Session 7] 15 fixes: PULSE_HOME, Free/Pro split, local CSS, form labels, JS escape, EUR/GBP FX"),
+    ("V1.612", "[Session 6] 12 fixes: yfinance refactor, batch fetch, TTL cache, atomic write, TWO market, Pulse rebrand"),
+    ("V1.5", "[Session 5] Initial release: multi-market, buy/sell, i18n, watchlist, multi-currency"),
 ]
 
 DEFAULT_CONFIG = {
