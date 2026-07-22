@@ -1,6 +1,7 @@
 import os
 import json
 import requests
+from requests.exceptions import Timeout, ConnectionError as ReqConnectionError
 import time
 import threading
 from datetime import datetime
@@ -17,107 +18,313 @@ BASE_DIR = os.environ.get("PULSE_HOME", os.path.dirname(os.path.abspath(__file__
 PORTFOLIO_JSON = os.path.join(BASE_DIR, "portfolio.json")
 WATCHLIST_JSON = os.path.join(BASE_DIR, "watchlist.json")  
 CONFIG_JSON = os.path.join(BASE_DIR, "system_config.json")
-CRUCIX_REPORTS_DIR = os.path.join(BASE_DIR, "AI_Stock_Reports")
 
-VERSION = "V1.715"
+VERSION = "V1.820"
 IS_PRO = False  # 由 pulse_pro.py 覆蓋為 True
 CHANGELOG = [
-    ("V1.5", "Initial release: multi-market dashboard, buy/sell, i18n, watchlist, multi-currency"),
-    ("V1.612", "V1.6 + 12 fixes: yfinance refactor, batch fetch, TTL cache, atomic write, TWO market, Pulse rebrand"),
-    ("V1.715", "V1.7 + 15 fixes: PULSE_HOME, Free/Pro split, local CSS, form labels, JS escape, EUR/GBP FX, cache fallback"),
+    ("V1.820", "Editable prompt (strict/balanced/relaxed), prompt mode toggle, i18n rebuild"),
+    ("V1.815", "API key confirm, smart error i18n, Weight%, Market Dist, Cash Ratio"),
+    ("V1.87", "Modal, label a11y, JS fix, i18n prompt, settings tabs, timeout"),
+    ("V1.8", "AI Audit: rich portfolio prompt + local inference presets (Ollama/vLLM/LM Studio)"),
+    ("V1.716", "Remove Crucix macro report integration"),
+    ("V1.715", "PULSE_HOME, Free/Pro split, local CSS, form labels, JS escape, EUR/GBP FX"),
+    ("V1.612", "yfinance refactor, batch fetch, TTL cache, atomic write, TWO market, Pulse rebrand"),
+    ("V1.5", "Initial release: multi-market, buy/sell, i18n, watchlist, multi-currency"),
 ]
 
 DEFAULT_CONFIG = {
     "api_key": "", "refresh_interval": 30, "language": "zh_tw",
     "ai_provider": "gemini", "ai_model": "gemini-2.5-flash",
     "custom_api_url": "https://generativelanguage.googleapis.com/v1beta/models/",
-    "secondary_currency": "HKD"
+    "secondary_currency": "HKD",
+    "ai_timeout": 60,
+    "cash_balance": 0,
+    "prompt_level": "balanced",
+    "custom_prompt": "",
+    "prompt_mode": "style"
 }
 # ==================== 翻译字典 (i18n) ====================
 TRANSLATIONS = {
     "zh_tw": {
-        "title": "Pulse", "subtitle": "Live Data · Real Intuition",
-        "auto_refresh_label": "⏱️ 更新 (秒):", "refresh_tooltip": "Yahoo Finance API 限制，建議 ≥30 秒以避免請求過多。休市時自動延長至數小時。", "ai_report_btn": "⚡ 產生AI報告",
-        "total_mv_label": "當前持倉總市值", "total_pnl_label": "🚨 全局持倉盈虧 (PnL)",
+        "title": "Pulse",
+        "subtitle": "Live Data · Real Intuition",
+        "auto_refresh_label": "⏱️ 更新 (秒):",
+        "refresh_tooltip": "Yahoo Finance API 限制，建議 ≥30 秒以避免請求過多。休市時自動延長至數小時。",
+        "ai_report_btn": "⚡ 產生AI報告",
+        "total_mv_label": "當前持倉總市值",
+        "total_pnl_label": "🚨 全局持倉盈虧 (PnL)",
         "summary_label": "📊 Summary 時間鎖狀態",
-        "buy_title": "🟢 新增股票持倉", "buy_ticker_ph": "ASTS", "buy_price_ph": "價格",
-        "buy_shares_ph": "股數", "buy_confirm": "確認買入", "buy_est_cost": "預計成本", "ticker_label": "代碼", "market_label": "市場", "date_label": "日期", "price_label": "單價", "shares_label": "股數", "commission_label": "手續費",
-        "sell_title": "🔴 賣出股票持倉", "sell_select_ticker": "-- 選擇股票 --",
-        "sell_price_ph": "價格", "sell_shares_ph": "股數",
-        "sell_confirm": "確認賣出", "sell_est_income": "預計收入", "sell_ticker_label": "選擇股票", "sell_date_label": "日期", "sell_price_label": "單價", "sell_shares_label": "股數", "sell_commission_label": "手續費",
-        "table_expand": "展開", "table_ticker": "股票", "table_shares": "總持股",
+        "buy_title": "🟢 新增股票持倉",
+        "buy_ticker_ph": "ASTS",
+        "buy_price_ph": "價格",
+        "buy_shares_ph": "股數",
+        "buy_confirm": "確認買入",
+        "buy_est_cost": "預計成本",
+        "ticker_label": "代碼",
+        "market_label": "市場",
+        "date_label": "日期",
+        "price_label": "單價",
+        "shares_label": "股數",
+        "commission_label": "手續費",
+        "sell_title": "🔴 賣出股票持倉",
+        "sell_select_ticker": "-- 選擇股票 --",
+        "sell_price_ph": "價格",
+        "sell_shares_ph": "股數",
+        "sell_confirm": "確認賣出",
+        "sell_est_income": "預計收入",
+        "sell_ticker_label": "選擇股票",
+        "sell_date_label": "日期",
+        "sell_price_label": "單價",
+        "sell_shares_label": "股數",
+        "sell_commission_label": "手續費",
+        "table_expand": "展開",
+        "table_ticker": "股票",
+        "table_shares": "總持股",
         "tab_all": "全部",
-        "table_avg_price": "平衡價", "table_current_price": "即時現價與日變動",
-        "table_stop_loss": "ATR 移動止蝕(2x)", "table_mv": "當前總現值", "table_pnl": "持倉盈虧",
-        "history_title": "歷史流水明細", "history_type": "類型", "history_date": "交易日期",
-        "history_price": "價格", "history_shares": "股數", "history_commission": "佣金",
-        "history_action": "操作", "history_delete": "🗑️ 刪除",
-        "settings_title": "⚙️ 系統參數控制面板", "settings_close": "✕ 關閉",
-        "settings_ai_provider": "AI Provider", "settings_model": "Model Name",
-        "settings_api_url": "Custom API URL", "settings_api_key": "API Key",
-        "settings_language": "介面語言", "settings_currency": "顯示貨幣", "settings_save": "儲存設定",
-        "wl_add_cat": "+ 新增分組", "wl_delete_cat": "刪除組", "wl_input_placeholder": "輸入代碼", "wl_new_cat_prompt": "新分組名稱", "watchlist_title": "🔍 WATCHLIST 自選股",
-        "audit_title": "🧠 實時交叉風險審計", "audit_loading": "Analyzing with custom model...",
-        "cooldown_ready": "💡 Ready", "cooldown_lock": "🛑 Lock", "cooldown_unlock": "🟢 Unlocked",
-        "capital_recovered_label": "已收回本金", "capital_recovered_badge": "💰 本金已收回", "capital_recover_hint": "💡 需再賣出", "capital_recover_hint_end": "股即可收回本金", "today_no_report": "今日尚未生成報告。",
-        "target_alert_title": "🎯 目標價通知", "target_set_btn": "🎯", "target_set_prompt": "設定目標價 (USD)", "target_reached": "已達目標價", "target_alert_hit": "跌至目標價", "target_alert_current": "現價", "market_open": "🟢 開市中", "market_closed": "🔴 已休市",
+        "table_avg_price": "平衡價",
+        "table_current_price": "即時現價與日變動",
+        "table_stop_loss": "ATR 移動止蝕(2x)",
+        "table_mv": "當前總現值",
+        "table_pnl": "持倉盈虧",
+        "history_title": "歷史流水明細",
+        "history_type": "類型",
+        "history_date": "交易日期",
+        "history_price": "價格",
+        "history_shares": "股數",
+        "history_commission": "佣金",
+        "history_action": "操作",
+        "history_delete": "🗑️ 刪除",
+        "settings_title": "⚙️ 系統設定",
+        "settings_close": "✕ 關閉",
+        "settings_tab_general": "一般設定",
+        "settings_tab_ai": "AI 模型",
+        "settings_timeout": "Timeout (秒)",
+        "settings_prompt_level": "分析風格",
+        "settings_custom_prompt": "自訂 Prompt",
+        "prompt_level_strict": "嚴格 — 聚焦風險與止損紀律",
+        "prompt_level_balanced": "平衡 — 綜合分析與建議",
+        "prompt_level_relaxed": "寬鬆 — 成長導向、樂觀評估",
+        "settings_prompt_mode": "Prompt 來源",
+        "prompt_mode_style": "使用分析風格",
+        "prompt_mode_custom": "使用自訂 Prompt",
+        "table_weight": "持股權重",
+        "card_market_dist": "市場分佈",
+        "card_cash_ratio": "現金比率",
+        "settings_cash_balance": "現金餘額 (USD)",
+        "settings_timeout_hint": "建議 30-120 秒",
+        "settings_prompt_hint": "可用變數：{summary} {holdings} {alloc} {lang}。留空使用分析風格的預設 Prompt。",
+        "changelog_title": "更新日誌",
+        "settings_ai_provider": "AI Provider",
+        "settings_model": "Model Name",
+        "settings_api_url": "Custom API URL",
+        "settings_api_key": "API Key",
+        "settings_language": "介面語言",
+        "settings_currency": "顯示貨幣",
+        "settings_save": "儲存設定",
+        "wl_add_cat": "+ 新增分組",
+        "wl_delete_cat": "刪除組",
+        "wl_input_placeholder": "輸入代碼",
+        "wl_new_cat_prompt": "新分組名稱",
+        "watchlist_title": "🔍 WATCHLIST 自選股",
+        "capital_recovered_badge": "💰 本金已收回",
+        "capital_recover_hint": "💡 需再賣出",
+        "capital_recover_hint_end": "股即可收回本金",
+        "capital_recovered_label": "已收回本金",
+        "target_set_btn": "🎯 設定目標價",
+        "target_alert_title": "🎯 目標價警示",
+        "target_alert_hit": "跌至目標價",
+        "target_alert_current": "現價",
+        "audit_title": "🧠 AI 投資組合分析報告",
+        "audit_loading": "AI 分析中，請稍候...",
+        "audit_confirm": "將會使用你的 API Key 呼叫 AI 模型產生報告，確定要繼續嗎？"
     },
     "zh_cn": {
-        "title": "Pulse", "subtitle": "Live Data · Real Intuition",
-        "auto_refresh_label": "⏱️ 更新 (秒):", "refresh_tooltip": "Yahoo Finance API 限制，建议 ≥30 秒以避免请求过多。休市时自动延长至数小时。", "ai_report_btn": "⚡ 生成AI报告",
-        "total_mv_label": "当前持仓总市值", "total_pnl_label": "🚨 全局持仓盈亏 (PnL)",
+        "title": "Pulse",
+        "subtitle": "Live Data · Real Intuition",
+        "auto_refresh_label": "⏱️ 更新 (秒):",
+        "refresh_tooltip": "Yahoo Finance API 限制，建议 ≥30 秒以避免请求过多。休市时自动延长至数小时。",
+        "ai_report_btn": "⚡ 生成AI报告",
+        "total_mv_label": "当前持仓总市值",
+        "total_pnl_label": "🚨 全局持仓盈亏 (PnL)",
         "summary_label": "📊 Summary 时间锁状态",
-        "buy_title": "🟢 新增股票持仓", "buy_ticker_ph": "ASTS", "buy_price_ph": "价格",
-        "buy_shares_ph": "股数", "buy_confirm": "确认买入", "buy_est_cost": "预计成本", "ticker_label": "代码", "market_label": "市场", "date_label": "日期", "price_label": "单价", "shares_label": "股数", "commission_label": "手续费",
-        "sell_title": "🔴 卖出股票持仓", "sell_select_ticker": "-- 选择股票 --",
-        "sell_price_ph": "价格", "sell_shares_ph": "股数",
-        "sell_confirm": "确认卖出", "sell_est_income": "预计收入", "sell_ticker_label": "选择股票", "sell_date_label": "日期", "sell_price_label": "单价", "sell_shares_label": "股数", "sell_commission_label": "手续费",
-        "table_expand": "展开", "table_ticker": "股票", "table_shares": "总持股",
+        "buy_title": "🟢 新增股票持仓",
+        "buy_ticker_ph": "ASTS",
+        "buy_price_ph": "价格",
+        "buy_shares_ph": "股数",
+        "buy_confirm": "确认买入",
+        "buy_est_cost": "预计成本",
+        "ticker_label": "代码",
+        "market_label": "市场",
+        "date_label": "日期",
+        "price_label": "单价",
+        "shares_label": "股数",
+        "commission_label": "手续费",
+        "sell_title": "🔴 卖出股票持仓",
+        "sell_select_ticker": "-- 选择股票 --",
+        "sell_price_ph": "价格",
+        "sell_shares_ph": "股数",
+        "sell_confirm": "确认卖出",
+        "sell_est_income": "预计收入",
+        "sell_ticker_label": "选择股票",
+        "sell_date_label": "日期",
+        "sell_price_label": "单价",
+        "sell_shares_label": "股数",
+        "sell_commission_label": "手续费",
+        "table_expand": "展开",
+        "table_ticker": "股票",
+        "table_shares": "总持股",
         "tab_all": "全部",
-        "table_avg_price": "平衡价", "table_current_price": "即时现价与日变动",
-        "table_stop_loss": "ATR 移动止损(2x)", "table_mv": "当前总现值", "table_pnl": "持仓盈亏",
-        "history_title": "历史流水明细", "history_type": "类型", "history_date": "交易日期",
-        "history_price": "价格", "history_shares": "股数", "history_commission": "佣金",
-        "history_action": "操作", "history_delete": "🗑️ 删除",
-        "settings_title": "⚙️ 系统参数控制面板", "settings_close": "✕ 关闭",
-        "settings_ai_provider": "AI Provider", "settings_model": "Model Name",
-        "settings_api_url": "Custom API URL", "settings_api_key": "API Key",
-        "settings_language": "界面语言", "settings_currency": "显示货币", "settings_save": "保存设定",
-        "wl_add_cat": "+ 新增分组", "wl_delete_cat": "删除组", "wl_input_placeholder": "输入代码", "wl_new_cat_prompt": "新分组名称", "watchlist_title": "🔍 WATCHLIST 自选股",
-        "audit_title": "🧠 实时交叉风险审计", "audit_loading": "Analyzing with custom model...",
-        "cooldown_ready": "💡 Ready", "cooldown_lock": "🛑 Lock", "cooldown_unlock": "🟢 Unlocked",
-        "capital_recovered_label": "已收回本金", "capital_recovered_badge": "💰 本金已收回", "capital_recover_hint": "💡 需再卖出", "capital_recover_hint_end": "股即可收回本金", "today_no_report": "今日尚未生成报告。",
-        "target_alert_title": "🎯 目标价通知", "target_set_btn": "🎯", "target_set_prompt": "设定目标价 (USD)", "target_reached": "已达目标价", "target_alert_hit": "跌至目标价", "target_alert_current": "现价", "market_open": "🟢 开市中", "market_closed": "🔴 已休市",
+        "table_avg_price": "平衡价",
+        "table_current_price": "即时现价与日变动",
+        "table_stop_loss": "ATR 移动止损(2x)",
+        "table_mv": "当前总现值",
+        "table_pnl": "持仓盈亏",
+        "history_title": "历史流水明细",
+        "history_type": "类型",
+        "history_date": "交易日期",
+        "history_price": "价格",
+        "history_shares": "股数",
+        "history_commission": "佣金",
+        "history_action": "操作",
+        "history_delete": "🗑️ 删除",
+        "settings_title": "⚙️ 系统设定",
+        "settings_close": "✕ 关闭",
+        "settings_tab_general": "一般设定",
+        "settings_tab_ai": "AI 模型",
+        "settings_timeout": "Timeout (秒)",
+        "settings_prompt_level": "分析风格",
+        "settings_custom_prompt": "自订 Prompt",
+        "prompt_level_strict": "严格 — 聚焦风险与止损纪律",
+        "prompt_level_balanced": "平衡 — 综合分析建议",
+        "prompt_level_relaxed": "宽松 — 成长导向、乐观评估",
+        "settings_prompt_mode": "Prompt 来源",
+        "prompt_mode_style": "使用分析风格",
+        "prompt_mode_custom": "使用自订 Prompt",
+        "table_weight": "持股权重",
+        "card_market_dist": "市场分布",
+        "card_cash_ratio": "现金比率",
+        "settings_cash_balance": "现金余额 (USD)",
+        "settings_timeout_hint": "建议 30-120 秒",
+        "settings_prompt_hint": "可用变数：{summary} {holdings} {alloc} {lang}。留空使用分析风格的预设 Prompt。",
+        "changelog_title": "更新日志",
+        "settings_ai_provider": "AI Provider",
+        "settings_model": "Model Name",
+        "settings_api_url": "Custom API URL",
+        "settings_api_key": "API Key",
+        "settings_language": "界面语言",
+        "settings_currency": "显示货币",
+        "settings_save": "保存设定",
+        "wl_add_cat": "+ 新增分组",
+        "wl_delete_cat": "删除组",
+        "wl_input_placeholder": "输入代码",
+        "wl_new_cat_prompt": "新分组名称",
+        "watchlist_title": "🔍 WATCHLIST 自选股",
+        "capital_recovered_badge": "💰 本金已收回",
+        "capital_recover_hint": "💡 需再卖出",
+        "capital_recover_hint_end": "股即可收回本金",
+        "capital_recovered_label": "已收回本金",
+        "target_set_btn": "🎯 设定目标价",
+        "target_alert_title": "🎯 目标价警示",
+        "target_alert_hit": "跌至目标价",
+        "target_alert_current": "现价",
+        "audit_title": "🧠 AI 投资组合分析报告",
+        "audit_loading": "AI 分析中，请稍候...",
+        "audit_confirm": "将会使用你的 API Key 调用 AI 模型生成报告，确定要继续吗？"
     },
     "en": {
-        "title": "Pulse", "subtitle": "Live Data · Real Intuition",
-        "auto_refresh_label": "\u23f1\ufe0f Refresh (sec):", "refresh_tooltip": "Yahoo Finance API rate limit. Recommend \u226530s to avoid excessive requests. Auto-extends to hours when markets closed.", "ai_report_btn": "\u26a1 Generate AI Report",
-        "total_mv_label": "Total Market Value", "total_pnl_label": "🚨 Total P&L",
-        "summary_label": "📊 Summary Cooldown Status",
-        "target_alert_title": "🎯 Price Alerts", "target_set_btn": "🎯", "target_set_prompt": "Set target price (USD)", "target_reached": "Target reached", "target_alert_hit": "Hit target", "target_alert_current": "Now", "market_open": "🟢 Open", "market_closed": "🔴 Closed",
-        "buy_title": "🟢 Add Position", "buy_ticker_ph": "ASTS", "buy_price_ph": "Price",
-        "buy_shares_ph": "Shares", "buy_confirm": "Confirm Buy", "buy_est_cost": "Est. Cost", "ticker_label": "Ticker", "market_label": "Market", "date_label": "Date", "price_label": "Price", "shares_label": "Shares", "commission_label": "Commission",
-        "sell_title": "🔴 Sell Position", "sell_select_ticker": "-- Select Ticker --",
-        "sell_price_ph": "Price", "sell_shares_ph": "Shares",
-        "sell_confirm": "Confirm Sell", "sell_est_income": "Est. Proceeds", "sell_ticker_label": "Ticker", "sell_date_label": "Date", "sell_price_label": "Price", "sell_shares_label": "Shares", "sell_commission_label": "Commission",
-        "table_expand": "Expand", "table_ticker": "Ticker", "table_shares": "Total Shares",
+        "title": "Pulse",
+        "subtitle": "Live Data · Real Intuition",
+        "auto_refresh_label": "⏱️ Refresh (sec):",
+        "refresh_tooltip": "Yahoo Finance API rate limit. Recommend ≥30s to avoid excessive requests. Auto-extends to hours when markets closed.",
+        "ai_report_btn": "⚡ Generate AI Report",
+        "total_mv_label": "Total Market Value",
+        "total_pnl_label": "🚨 Total P&L",
+        "summary_label": "📊 Summary Time Lock",
+        "buy_title": "🟢 Add Position",
+        "buy_ticker_ph": "ASTS",
+        "buy_price_ph": "Price",
+        "buy_shares_ph": "Shares",
+        "buy_confirm": "Confirm Buy",
+        "buy_est_cost": "Est. Cost",
+        "ticker_label": "Ticker",
+        "market_label": "Market",
+        "date_label": "Date",
+        "price_label": "Price",
+        "shares_label": "Shares",
+        "commission_label": "Commission",
+        "sell_title": "🔴 Sell Position",
+        "sell_select_ticker": "-- Select Ticker --",
+        "sell_price_ph": "Price",
+        "sell_shares_ph": "Shares",
+        "sell_confirm": "Confirm Sell",
+        "sell_est_income": "Est. Proceeds",
+        "sell_ticker_label": "Ticker",
+        "sell_date_label": "Date",
+        "sell_price_label": "Price",
+        "sell_shares_label": "Shares",
+        "sell_commission_label": "Commission",
+        "table_expand": "Expand",
+        "table_ticker": "Ticker",
+        "table_shares": "Total Shares",
         "tab_all": "All",
-        "table_avg_price": "Avg Cost", "table_current_price": "Price & Day Change",
-        "table_stop_loss": "ATR Trailing Stop(2x)", "table_mv": "Market Value", "table_pnl": "P&L",
-        "history_title": "Transaction History", "history_type": "Type", "history_date": "Date",
-        "history_price": "Price", "history_shares": "Shares", "history_commission": "Commission",
-        "history_action": "Action", "history_delete": "🗑️ Delete",
-        "settings_title": "⚙️ System Settings", "settings_close": "✕ Close",
-        "settings_ai_provider": "AI Provider", "settings_model": "Model Name",
-        "settings_api_url": "Custom API URL", "settings_api_key": "API Key",
-        "settings_language": "Language", "settings_currency": "Currency", "settings_save": "Save Settings",
-        "wl_add_cat": "+ Add Group", "wl_delete_cat": "Del Group", "wl_input_placeholder": "Ticker", "wl_new_cat_prompt": "Group Name", "watchlist_title": "🔍 WATCHLIST",
-        "audit_title": "🧠 Real-time Cross Risk Audit", "audit_loading": "Analyzing with custom model...",
-        "cooldown_ready": "💡 Ready", "cooldown_lock": "🛑 Lock", "cooldown_unlock": "🟢 Unlocked",
-        "capital_recovered_label": "Capital Recovered", "capital_recovered_badge": "💰 Capital Recovered", "capital_recover_hint": "💡 Sell", "capital_recover_hint_end": "more shares to recover capital", "today_no_report": "No report generated today.",
+        "table_avg_price": "Avg Cost",
+        "table_current_price": "Price & Day Change",
+        "table_stop_loss": "ATR Trailing Stop(2x)",
+        "table_mv": "Market Value",
+        "table_pnl": "P&L",
+        "history_title": "Transaction History",
+        "history_type": "Type",
+        "history_date": "Date",
+        "history_price": "Price",
+        "history_shares": "Shares",
+        "history_commission": "Commission",
+        "history_action": "Action",
+        "history_delete": "🗑️ Delete",
+        "settings_title": "⚙️ System Settings",
+        "settings_close": "✕ Close",
+        "settings_tab_general": "General",
+        "settings_tab_ai": "AI Model",
+        "settings_timeout": "Timeout (sec)",
+        "settings_prompt_level": "Analysis Style",
+        "settings_custom_prompt": "Custom Prompt",
+        "prompt_level_strict": "Strict — Risk & stop-loss focused",
+        "prompt_level_balanced": "Balanced — Comprehensive analysis",
+        "prompt_level_relaxed": "Relaxed — Growth-oriented, optimistic",
+        "settings_prompt_mode": "Prompt Source",
+        "prompt_mode_style": "Use Analysis Style",
+        "prompt_mode_custom": "Use Custom Prompt",
+        "table_weight": "Weight %",
+        "card_market_dist": "Market Distribution",
+        "card_cash_ratio": "Cash Ratio",
+        "settings_cash_balance": "Cash Balance (USD)",
+        "settings_timeout_hint": "Recommend 30-120 sec",
+        "settings_prompt_hint": "Variables: {summary} {holdings} {alloc} {lang}. Leave empty to use Analysis Style preset.",
+        "changelog_title": "Changelog",
+        "settings_ai_provider": "AI Provider",
+        "settings_model": "Model Name",
+        "settings_api_url": "Custom API URL",
+        "settings_api_key": "API Key",
+        "settings_language": "Language",
+        "settings_currency": "Currency",
+        "settings_save": "Save Settings",
+        "wl_add_cat": "+ Add Group",
+        "wl_delete_cat": "Delete Group",
+        "wl_input_placeholder": "Enter ticker",
+        "wl_new_cat_prompt": "New group name",
+        "watchlist_title": "🔍 WATCHLIST",
+        "capital_recovered_badge": "💰 Capital Recovered",
+        "capital_recover_hint": "💡 Sell",
+        "capital_recover_hint_end": "more shares to recover cost",
+        "capital_recovered_label": "Capital Recovered",
+        "target_set_btn": "🎯 Set Target",
+        "target_alert_title": "🎯 Target Alerts",
+        "target_alert_hit": "Hit target",
+        "target_alert_current": "Current",
+        "audit_title": "🧠 AI Portfolio Analysis Report",
+        "audit_loading": "Analyzing with AI model...",
+        "audit_confirm": "This will use your API key to call the AI model. Continue?"
     },
 }
-
 def get_translations(lang):
     return TRANSLATIONS.get(lang, TRANSLATIONS["zh_tw"])
 
@@ -297,11 +504,6 @@ def check_any_market_active():
     """Return True if at least one tracked market (US/HK/CN/TW) is currently open."""
     return any(is_market_open(m) for m in ["US", "HK", "CN", "TW", "TWO"])
 
-def get_latest_crucix_report():
-    date_str = datetime.now().strftime("%Y-%m-%d")
-    summary_path = os.path.join(CRUCIX_REPORTS_DIR, f"Summary_{date_str}.md")
-    return open(summary_path, 'r', encoding='utf-8').read() if os.path.exists(summary_path) else "今日尚未生成報告。"
-
 # ==================== 🎯 3. 核心數據聚合（內嵌流水明細） ====================
 def calculate_portfolio_matrix():
     portfolio = load_portfolio()
@@ -382,7 +584,7 @@ def calculate_portfolio_matrix():
             
         processed_holdings.append({
             'ticker': ticker, 'status': status, 'total_shares': f"{int(current_shares)}", 'avg_buy_price': f"{avg_buy_price:,.2f}", 'current_price': f"{current_price:,.2f}",
-            'day_change': day_change, 'day_change_pct': day_change_pct, 'stop_loss': stop_loss, 'atr_20': atr_20, 'is_danger': is_danger, 'current_mv': f"{current_mv:,.2f}" if current_shares > 0 else '-',
+            'day_change': day_change, 'day_change_pct': day_change_pct, 'stop_loss': stop_loss, 'atr_20': atr_20, 'is_danger': is_danger, 'current_mv': f"{current_mv:,.2f}" if current_shares > 0 else '-', 'current_mv_raw': current_mv,
             'pnl_usd_str': f"{pnl_usd:+,.2f}" if current_shares > 0 else '-', 'pnl_hkd_str': f"{(pnl_usd * usd_hkd):+,.2f}" if current_shares > 0 else '-', 'roi_str': f"{roi:+.2f}%" if current_shares > 0 else '-',
             'market': data['history_txs'][0].get('market') or 'US',
             'praw': pnl_usd,
@@ -514,57 +716,114 @@ def index():
             </div>
         </div>
 
-        <!-- ⚙️ 系統參數控制面板 -->
+        <!-- ⚙️ 系統設定 -->
         <div id="settingsModal" class="modal-bg">
             <div class="bg-slate-900 border border-slate-800 p-8 rounded-2xl shadow-2xl w-full max-w-2xl border-l-4 border-l-cyan-500 m-4">
                 <div class="flex justify-between items-center border-b border-slate-800 pb-4 mb-6">
                     <h3 class="text-lg font-black text-cyan-400 tracking-wide">{{ t.settings_title }} <span class="text-slate-600 text-xs font-mono ml-2">{{ version }}</span></h3>
                     <button onclick="toggleSettingsModal()" class="text-slate-400 hover:text-slate-200 font-bold text-sm">{{ t.settings_close }}</button>
                 </div>
+
+                <!-- Tab buttons -->
+                <div class="flex gap-1 mb-6">
+                    <button type="button" id="tab-btn-general" onclick="switchSettingsTab('general')" class="px-4 py-1.5 text-xs font-bold rounded bg-cyan-600 text-slate-900">{{ t.settings_tab_general }}</button>
+                    <button type="button" id="tab-btn-ai" onclick="switchSettingsTab('ai')" class="px-4 py-1.5 text-xs font-bold rounded bg-slate-800 text-slate-400 hover:bg-slate-700">{{ t.settings_tab_ai }}</button>
+                </div>
+
                 <form action="/api/config/save" method="POST" class="space-y-4 text-xs">
-                    {% if is_pro %}
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                    <!-- GENERAL TAB -->
+                    <div id="settings-tab-general" class="space-y-4">
                         <div>
-                            <label class="block text-slate-400 font-bold mb-1" for="settings-ai-provider">{{ t.settings_ai_provider }}</label>
-                            <select name="ai_provider" id="settings-ai-provider" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-bold">
-                                <option value="gemini" {% if config.ai_provider == 'gemini' %}selected{% endif %}>Google Gemini</option>
-                                <option value="openai" {% if config.ai_provider == 'openai' %}selected{% endif %}>OpenAI API compatible</option>
-                                <option value="deepseek" {% if config.ai_provider == 'deepseek' %}selected{% endif %}>DeepSeek (Official)</option>
+                            <label class="block text-slate-400 font-bold mb-1" for="settings-language">{{ t.settings_language }}</label>
+                            <select name="language" id="settings-language" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-bold">
+                                <option value="zh_tw" {% if config.language == 'zh_tw' %}selected{% endif %}>繁體中文</option>
+                                <option value="zh_cn" {% if config.language == 'zh_cn' %}selected{% endif %}>簡體中文</option>
+                                <option value="en" {% if config.language == 'en' %}selected{% endif %}>English</option>
                             </select>
                         </div>
                         <div>
-                            <label class="block text-slate-400 font-bold mb-1" for="settings-model">{{ t.settings_model }}</label>
-                            <input type="text" name="ai_model" id="settings-model" value="{{ config.ai_model }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-mono">
+                            <label class="block text-slate-400 font-bold mb-1" for="settings-cash-balance">{{ t.settings_cash_balance }}</label>
+                            <input type="number" step="0.01" name="cash_balance" id="settings-cash-balance" value="{{ config.cash_balance }}" min="0" class="w-40 bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-mono">
+                        </div>
+                        <div>
+                            <label class="block text-slate-400 font-bold mb-1" for="settings-currency">{{ t.settings_currency }}</label>
+                            <select name="secondary_currency" id="settings-currency" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-bold">
+                                <option value="HKD" {% if config.secondary_currency == 'HKD' %}selected{% endif %}>HKD 港幣</option>
+                                <option value="CNY" {% if config.secondary_currency == 'CNY' %}selected{% endif %}>CNY 人民幣</option>
+                                <option value="TWD" {% if config.secondary_currency == 'TWD' %}selected{% endif %}>TWD 新台幣</option>
+                                <option value="JPY" {% if config.secondary_currency == 'JPY' %}selected{% endif %}>JPY 日圓</option>
+                                <option value="EUR" {% if config.secondary_currency == 'EUR' %}selected{% endif %}>EUR 歐元</option>
+                                <option value="GBP" {% if config.secondary_currency == 'GBP' %}selected{% endif %}>GBP 英鎊</option>
+                            </select>
                         </div>
                     </div>
-                    <div>
-                        <label class="block text-slate-400 font-bold mb-1" for="settings-api-url">{{ t.settings_api_url }}</label>
-                        <input type="text" name="custom_api_url" id="settings-api-url" value="{{ config.custom_api_url }}" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-mono">
+
+                    <!-- AI TAB -->
+                    <div id="settings-tab-ai" class="hidden space-y-4">
+                        {% if is_pro %}
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-slate-400 font-bold mb-1" for="settings-ai-provider">{{ t.settings_ai_provider }}</label>
+                                <select name="ai_provider" id="settings-ai-provider" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-bold">
+                                    <option value="gemini" {% if config.ai_provider == 'gemini' %}selected{% endif %}>Google Gemini</option>
+                                    <option value="openai" {% if config.ai_provider == 'openai' %}selected{% endif %}>OpenAI API compatible</option>
+                                    <option value="deepseek" {% if config.ai_provider == 'deepseek' %}selected{% endif %}>DeepSeek (Official)</option>
+                                    <option disabled class="text-slate-600">── Local Inference ──</option>
+                                    <option value="ollama" {% if config.ai_provider == 'ollama' %}selected{% endif %}>🖥️ Ollama (Local)</option>
+                                    <option value="vllm" {% if config.ai_provider == 'vllm' %}selected{% endif %}>🖥️ vLLM (Local)</option>
+                                    <option value="lmstudio" {% if config.ai_provider == 'lmstudio' %}selected{% endif %}>🖥️ LM Studio (Local)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-slate-400 font-bold mb-1" for="settings-model">{{ t.settings_model }}</label>
+                                <input type="text" name="ai_model" id="settings-model" value="{{ config.ai_model }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-mono">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-slate-400 font-bold mb-1" for="settings-api-url">{{ t.settings_api_url }}</label>
+                            <input type="text" name="custom_api_url" id="settings-api-url" value="{{ config.custom_api_url }}" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-mono">
+                        </div>
+                        <div>
+                            <label class="block text-slate-400 font-bold mb-1" for="settings-api-key">{{ t.settings_api_key }}</label>
+                            <input type="password" name="api_key" id="settings-api-key" value="{{ config.api_key }}" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-mono">
+                        </div>
+                        <div>
+                            <label class="block text-slate-400 font-bold mb-1" for="settings-timeout">{{ t.settings_timeout }}</label>
+                            <input type="number" name="ai_timeout" id="settings-timeout" value="{{ config.ai_timeout }}" min="10" max="300" class="w-24 bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-mono text-center">
+                            <span class="text-slate-600 text-[10px] ml-2">{{ t.settings_timeout_hint }}</span>
+                        </div>
+                        <div>
+                            <label class="block text-slate-400 font-bold mb-1">{{ t.settings_prompt_mode }}</label>
+                            <div class="flex gap-4 mb-3">
+                                <label class="flex items-center gap-1.5 text-slate-300 cursor-pointer">
+                                    <input type="radio" name="prompt_mode" value="style" {% if config.prompt_mode != 'custom' %}checked{% endif %} class="accent-cyan-500">
+                                    <span class="text-xs">{{ t.prompt_mode_style }}</span>
+                                </label>
+                                <label class="flex items-center gap-1.5 text-slate-300 cursor-pointer">
+                                    <input type="radio" name="prompt_mode" value="custom" {% if config.prompt_mode == 'custom' %}checked{% endif %} class="accent-cyan-500">
+                                    <span class="text-xs">{{ t.prompt_mode_custom }}</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-slate-400 font-bold mb-1" for="settings-prompt-level">{{ t.settings_prompt_level }}</label>
+                            <select name="prompt_level" id="settings-prompt-level" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-bold">
+                                <option value="strict" {% if config.prompt_level == 'strict' %}selected{% endif %}>{{ t.prompt_level_strict }}</option>
+                                <option value="balanced" {% if config.prompt_level == 'balanced' %}selected{% endif %}>{{ t.prompt_level_balanced }}</option>
+                                <option value="relaxed" {% if config.prompt_level == 'relaxed' %}selected{% endif %}>{{ t.prompt_level_relaxed }}</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-slate-400 font-bold mb-1" for="settings-custom-prompt">{{ t.settings_custom_prompt }}</label>
+                            <textarea name="custom_prompt" id="settings-custom-prompt" rows="6" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-300 font-mono text-[11px]" placeholder="留空則使用預設 Prompt...">{{ config.custom_prompt }}</textarea>
+                            <p class="text-slate-600 text-[10px] mt-1">{{ t.settings_prompt_hint }}</p>
+                        </div>
+                        {% else %}
+                        <p class="text-slate-500 text-sm">AI 模型設定僅在 Pro 版本可用。</p>
+                        {% endif %}
                     </div>
-                    <div>
-                        <label class="block text-slate-400 font-bold mb-1" for="settings-api-key">{{ t.settings_api_key }}</label>
-                        <input type="password" name="api_key" id="settings-api-key" value="{{ config.api_key }}" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-mono">
-                    </div>
-                    {% endif %}
-                    <div>
-                        <label class="block text-slate-400 font-bold mb-1" for="settings-language">{{ t.settings_language }}</label>
-                        <select name="language" id="settings-language" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-bold">
-                            <option value="zh_tw" {% if config.language == 'zh_tw' %}selected{% endif %}>繁體中文</option>
-                            <option value="zh_cn" {% if config.language == 'zh_cn' %}selected{% endif %}>簡體中文</option>
-                            <option value="en" {% if config.language == 'en' %}selected{% endif %}>English</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-slate-400 font-bold mb-1" for="settings-currency">{{ t.settings_currency }}</label>
-                        <select name="secondary_currency" id="settings-currency" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-bold">
-                            <option value="HKD" {% if config.secondary_currency == 'HKD' %}selected{% endif %}>HKD 港幣</option>
-                            <option value="CNY" {% if config.secondary_currency == 'CNY' %}selected{% endif %}>CNY 人民幣</option>
-                            <option value="TWD" {% if config.secondary_currency == 'TWD' %}selected{% endif %}>TWD 新台幣</option>
-                            <option value="JPY" {% if config.secondary_currency == 'JPY' %}selected{% endif %}>JPY 日圓</option>
-                            <option value="EUR" {% if config.secondary_currency == 'EUR' %}selected{% endif %}>EUR 歐元</option>
-                            <option value="GBP" {% if config.secondary_currency == 'GBP' %}selected{% endif %}>GBP 英鎊</option>
-                        </select>
-                    </div>
+
                     <div class="border-t border-slate-800 pt-4 flex justify-end">
                         <button type="submit" class="px-6 py-2 bg-cyan-600 hover:bg-cyan-500 font-black rounded text-slate-900 tracking-wider">{{ t.settings_save }}</button>
                     </div>
@@ -572,7 +831,7 @@ def index():
 
                 <!-- 📋 更新日誌 -->
                 <div class="border-t border-slate-800 mt-4 pt-4">
-                    <p class="text-slate-500 text-[10px] font-bold uppercase mb-2">更新日誌</p>
+                    <p class="text-slate-500 text-[10px] font-bold uppercase mb-2">{{ t.changelog_title }}</p>
                     <div class="space-y-1 max-h-32 overflow-y-auto">
                         {% for ver, msg in changelog %}
                         <div class="text-[10px]"><span class="text-cyan-400 font-mono">{{ ver }}</span> <span class="text-slate-500">{{ msg }}</span></div>
@@ -606,7 +865,7 @@ def index():
                         <input type="number" id="refreshIntervalInput" name="refresh_interval" value="{{ config.refresh_interval }}" min="10" title="{{ t.refresh_tooltip }}" class="w-12 bg-slate-950 text-center text-emerald-400 font-mono rounded font-bold" onchange="updateLiveInterval(this.value)">
                         <span id="refreshIndicator" class="h-2 w-2 rounded-full bg-emerald-500"></span>
                     </div>
-                    {% if is_pro %}<button onclick="runAiAudit()" class="px-5 py-2.5 bg-gradient-to-r from-cyan-500 to-emerald-500 font-bold rounded-lg text-xs tracking-widest">⚡ 產生AI報告</button>{% endif %}
+                    {% if is_pro %}<button onclick="runAiAudit()" class="px-5 py-2.5 bg-gradient-to-r from-cyan-500 to-emerald-500 font-bold rounded-lg text-xs tracking-widest">{{ t.ai_report_btn }}</button>{% endif %}
                     <button onclick="toggleSettingsModal()" class="p-2.5 bg-slate-900 border border-slate-800 rounded-lg text-slate-300">⚙️</button>
                 </div>
             </div>
@@ -633,17 +892,47 @@ def index():
 {% endif %}
             </div>
 
+            {% if is_pro %}
+            <!-- Pro: 市場分佈 + 現金比率 -->
+            <div class="grid grid-cols-2 gap-6 mb-8">
+                <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl">
+                    <p class="text-slate-400 text-xs font-bold uppercase mb-3">{{ t.card_market_dist }}</p>
+                    {% set ns = namespace(markets={}) %}
+                    {% for stock in stocks %}
+                        {% if stock.status == 'OPEN' and stock.current_mv_raw > 0 %}
+                            {% set _ = ns.markets.update({stock.market: ns.markets.get(stock.market, 0) + stock.current_mv_raw}) %}
+                        {% endif %}
+                    {% endfor %}
+                    {% for mkt, mv in ns.markets.items()|sort(attribute='1', reverse=True) %}
+                    <div class="flex justify-between items-center mb-1.5 text-sm">
+                        <span class="text-slate-300 font-bold">{{ mkt }}</span>
+                        <span class="text-slate-400 font-mono">${{ "{:,.0f}".format(mv) }}</span>
+                        <span class="text-cyan-400 font-mono text-xs">{{ "%.1f"|format(mv / total_mv_usd_raw * 100) if total_mv_usd_raw > 0 else 0 }}%</span>
+                    </div>
+                    <div class="w-full bg-slate-800 rounded-full h-1.5 mb-2">
+                        <div class="bg-cyan-500 h-1.5 rounded-full" style="width: {{ "%.0f"|format(mv / total_mv_usd_raw * 100) if total_mv_usd_raw > 0 else 0 }}%"></div>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl flex flex-col justify-center items-center">
+                    <p class="text-slate-400 text-xs font-bold uppercase mb-2">{{ t.card_cash_ratio }}</p>
+                    <p class="text-4xl font-black text-emerald-400">{{ "%.1f"|format(cash_balance / (total_mv_usd_raw + cash_balance) * 100) if (total_mv_usd_raw + cash_balance) > 0 else 0 }}%</p>
+                    <p class="text-slate-500 text-xs mt-1">${{ "{:,.0f}".format(cash_balance) }} / ${{ "{:,.0f}".format(total_mv_usd_raw + cash_balance) }}</p>
+                </div>
+            </div>
+            {% endif %}
+
             <!-- 交易輸入表單 -->
             <div class="grid grid-cols-2 gap-6 mb-8">
                 <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl border-l-4 border-l-emerald-500">
                     <h3 class="text-md font-black text-emerald-400 mb-4">{{ t.buy_title }}</h3>
                     <form id="buy-form" class="grid grid-cols-2 gap-3 text-xs" onsubmit="submitTrade(event, 'buy')">
-                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5">{{ t.ticker_label }}</label><input type="text" name="ticker" id="buy-ticker" placeholder="{{ t.buy_ticker_ph }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2 font-mono uppercase"></div>
-                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5">{{ t.market_label }}</label><select name="market" id="buy-market" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-bold"><option value="US">US</option><option value="HK">HK</option><option value="CN">CN</option><option value="TW">TW</option><option value="TWO">TWO</option></select></div>
-                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5">{{ t.date_label }}</label><input type="date" name="buy_date" id="buy-date" value="{{ today_date }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
-                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5">{{ t.price_label }}</label><input type="number" step="0.0001" name="buy_price" id="buy-price" placeholder="{{ t.buy_price_ph }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
-                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5">{{ t.shares_label }}</label><input type="number" name="buy_shares" id="buy-shares" placeholder="{{ t.buy_shares_ph }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
-                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5">{{ t.commission_label }}</label><input type="number" step="0.01" name="buy_commission" value="0.00" class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
+                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5" for="buy-ticker">{{ t.ticker_label }}</label><input type="text" name="ticker" id="buy-ticker" placeholder="{{ t.buy_ticker_ph }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2 font-mono uppercase"></div>
+                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5" for="buy-market">{{ t.market_label }}</label><select name="market" id="buy-market" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-bold"><option value="US">US</option><option value="HK">HK</option><option value="CN">CN</option><option value="TW">TW</option><option value="TWO">TWO</option></select></div>
+                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5" for="buy-date">{{ t.date_label }}</label><input type="date" name="buy_date" id="buy-date" value="{{ today_date }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
+                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5" for="buy-price">{{ t.price_label }}</label><input type="number" step="0.0001" name="buy_price" id="buy-price" placeholder="{{ t.buy_price_ph }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
+                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5" for="buy-shares">{{ t.shares_label }}</label><input type="number" name="buy_shares" id="buy-shares" placeholder="{{ t.buy_shares_ph }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
+                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5" for="buy-commission">{{ t.commission_label }}</label><input type="number" step="0.01" name="buy_commission" id="buy-commission" value="0.00" class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
                         <button type="submit" class="col-span-2 py-2 bg-emerald-600 hover:bg-emerald-700 font-bold rounded">{{ t.buy_confirm }}</button>
                         <div id="buy-estimated-cost" class="col-span-2 text-center text-xs font-mono text-emerald-300 mt-1">{{ t.buy_est_cost }}: $0.00</div>
                     </form>
@@ -651,11 +940,11 @@ def index():
                 <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl border-l-4 border-l-rose-500">
                     <h3 class="text-md font-black text-rose-400 mb-4">{{ t.sell_title }}</h3>
                     <form id="sell-form" class="grid grid-cols-2 gap-3 text-xs" onsubmit="submitTrade(event, 'sell')">
-                        <div class="col-span-2"><label class="block text-slate-500 text-[10px] font-bold mb-0.5">{{ t.sell_ticker_label }}</label><select name="ticker" id="sell-ticker" required class="w-full bg-slate-950 border border-slate-800 rounded p-2 font-bold"><option value="">{{ t.sell_select_ticker }}</option>{% set ns = namespace(current_market='') %}{% for tk in open_tickers %}{% set m = ticker_market.get(tk, 'US') %}{% if m != ns.current_market %}{% if ns.current_market != '' %}</optgroup>{% endif %}<optgroup label="{{ m }}">{% set ns.current_market = m %}{% endif %}<option value="{{ tk }}">{{ tk }}</option>{% endfor %}</optgroup></select></div>
-                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5">{{ t.sell_date_label }}</label><input type="date" name="sell_date" id="sell-date" value="{{ today_date }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
-                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5">{{ t.sell_price_label }}</label><input type="number" step="0.0001" name="sell_price" id="sell-price" placeholder="{{ t.sell_price_ph }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
-                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5">{{ t.sell_shares_label }}</label><input type="number" name="sell_shares" id="sell-shares" placeholder="{{ t.sell_shares_ph }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
-                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5">{{ t.sell_commission_label }}</label><input type="number" step="0.01" name="sell_commission" value="0.00" class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
+                        <div class="col-span-2"><label class="block text-slate-500 text-[10px] font-bold mb-0.5" for="sell-ticker">{{ t.sell_ticker_label }}</label><select name="ticker" id="sell-ticker" required class="w-full bg-slate-950 border border-slate-800 rounded p-2 font-bold"><option value="">{{ t.sell_select_ticker }}</option>{% set ns = namespace(current_market='') %}{% for tk in open_tickers %}{% set m = ticker_market.get(tk, 'US') %}{% if m != ns.current_market %}{% if ns.current_market != '' %}</optgroup>{% endif %}<optgroup label="{{ m }}">{% set ns.current_market = m %}{% endif %}<option value="{{ tk }}">{{ tk }}</option>{% endfor %}</optgroup></select></div>
+                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5" for="sell-date">{{ t.sell_date_label }}</label><input type="date" name="sell_date" id="sell-date" value="{{ today_date }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
+                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5" for="sell-price">{{ t.sell_price_label }}</label><input type="number" step="0.0001" name="sell_price" id="sell-price" placeholder="{{ t.sell_price_ph }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
+                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5" for="sell-shares">{{ t.sell_shares_label }}</label><input type="number" name="sell_shares" id="sell-shares" placeholder="{{ t.sell_shares_ph }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
+                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5" for="sell-commission">{{ t.sell_commission_label }}</label><input type="number" step="0.01" name="sell_commission" id="sell-commission" value="0.00" class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
                         <button type="submit" class="col-span-2 py-2 bg-rose-600 hover:bg-rose-700 font-bold rounded">{{ t.sell_confirm }}</button>
                         <div id="sell-estimated-cost" class="col-span-2 text-center text-xs font-mono text-rose-300 mt-1">{{ t.sell_est_income }}: $0.00</div>
                     </form>
@@ -685,6 +974,7 @@ def index():
                             <th class="px-4 py-4">{{ t.table_stop_loss }}</th>
                             <th class="px-4 py-4">{{ t.table_mv }}</th>
                             <th class="px-6 py-4 text-right">{{ t.table_pnl }}</th>
+                            {% if is_pro %}<th class="px-4 py-4 text-right">{{ t.table_weight }}</th>{% endif %}
                         </tr>
                     </thead>
                     
@@ -711,17 +1001,22 @@ def index():
                             <td id="pnl-{{ stock.ticker }}" class="px-6 py-4 text-right font-mono font-bold {% if stock.praw >= 0 %}text-emerald-400{% else %}text-rose-500{% endif %}">
                                 {{ stock.pnl_usd_str }} ({{ stock.roi_str }})
                             </td>
+                            {% if is_pro %}
+                            <td class="px-4 py-4 text-right font-mono text-slate-400 text-sm">
+                                {{ "%.1f"|format(stock.current_mv_raw / total_mv_usd_raw * 100) if total_mv_usd_raw > 0 and stock.current_mv_raw > 0 else "-" }}%
+                            </td>
+                            {% endif %}
                         </tr>
                         
                         <!-- 💡 本金收回提示 -->
                         <tr id="recover-hint-{{ stock.ticker }}" class="{% if stock.capital_recovered or stock.status == 'CLOSED' %}hidden{% endif %}">
-                            <td colspan="8" class="px-4 py-1 text-[11px] text-amber-500/80 font-medium tracking-wide">
+                            {% if is_pro %}<td colspan="9" class="px-4 py-1 text-[11px] text-amber-500/80 font-medium tracking-wide">{% else %}<td colspan="8" class="px-4 py-1 text-[11px] text-amber-500/80 font-medium tracking-wide">{% endif %}
                                 {{ t.capital_recover_hint }} <span id="recover-shares-{{ stock.ticker }}" class="font-bold underline">{{ stock.shares_to_sell_to_recover }}</span> {{ t.capital_recover_hint_end }}
                             </td>
                         </tr>
                         <!-- 🌟 內嵌式歷史交易明細 (該股票專屬) -->
                         <tr id="details-{{ stock.ticker }}" class="hidden bg-slate-950/40">
-                            <td colspan="8" class="px-8 py-4">
+                            {% if is_pro %}<td colspan="9" class="px-8 py-4">{% else %}<td colspan="8" class="px-8 py-4">{% endif %}
                                 <div class="border-l-2 border-slate-700 pl-4 py-2">
                                     <div class="text-slate-400 font-bold mb-2 uppercase font-mono tracking-wider text-[11px]">{{ t.history_title }} — ${{ stock.ticker }} | {{ t.capital_recovered_label }}: ${{ stock.capital_recovered_str }}</div>
                                     <table class="w-full text-left font-mono text-[11px] text-slate-400">
@@ -758,10 +1053,15 @@ def index():
                 </table>
             </div>
 
-            <!-- AI 審計區塊 -->
-            <div id="auditSection" class="hidden bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-2xl">
-                <h2 class="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-emerald-400 mb-4">🧠 實時交叉風險審計</h2>
-                <div id="auditResult" class="text-slate-300 text-sm whitespace-pre-wrap font-sans leading-relaxed"></div>
+            <!-- AI 審計區塊（已移至 Modal） -->
+            <div id="auditModal" class="modal-bg">
+                <div class="bg-slate-900 border border-slate-800 p-8 rounded-2xl shadow-2xl w-full max-w-4xl border-l-4 border-l-emerald-500 m-4" style="max-height: 85vh; display: flex; flex-direction: column;">
+                    <div class="flex justify-between items-center border-b border-slate-800 pb-4 mb-6 flex-shrink-0">
+                        <h3 class="text-lg font-black text-emerald-400 tracking-wide">{{ t.audit_title }} <span class="text-slate-600 text-xs font-mono ml-2">{{ config.ai_model }}</span></h3>
+                        <button onclick="closeAuditModal()" class="text-slate-400 hover:text-slate-200 font-bold text-sm">{{ t.settings_close }}</button>
+                    </div>
+                    <div id="auditResult" class="text-slate-300 text-sm whitespace-pre-wrap font-sans leading-relaxed overflow-y-auto flex-1"></div>
+                </div>
             </div>
         </div>
 
@@ -789,6 +1089,41 @@ def index():
             }
 
             function toggleSettingsModal() { document.getElementById('settingsModal').classList.toggle('modal-active'); }
+
+            // 🔀 Settings tab switching
+            function switchSettingsTab(tab) {
+                document.getElementById('settings-tab-general').classList.toggle('hidden', tab !== 'general');
+                document.getElementById('settings-tab-ai').classList.toggle('hidden', tab !== 'ai');
+                var gb = document.getElementById('tab-btn-general');
+                var ab = document.getElementById('tab-btn-ai');
+                if (tab === 'general') {
+                    gb.className = 'px-4 py-1.5 text-xs font-bold rounded bg-cyan-600 text-slate-900';
+                    ab.className = 'px-4 py-1.5 text-xs font-bold rounded bg-slate-800 text-slate-400 hover:bg-slate-700';
+                } else {
+                    ab.className = 'px-4 py-1.5 text-xs font-bold rounded bg-cyan-600 text-slate-900';
+                    gb.className = 'px-4 py-1.5 text-xs font-bold rounded bg-slate-800 text-slate-400 hover:bg-slate-700';
+                }
+            }
+
+            // 🤖 AI Provider presets — auto-fill URL & model
+            const AI_PRESETS = {
+                'gemini':   { url: 'https://generativelanguage.googleapis.com/v1beta/models/', model: 'gemini-2.5-flash' },
+                'openai':   { url: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+                'deepseek': { url: 'https://api.deepseek.com/v1', model: 'deepseek-v4-flash' },
+                'ollama':   { url: 'http://localhost:11434/v1', model: 'qwen2.5:7b' },
+                'vllm':     { url: 'http://localhost:8000/v1', model: '' },
+                'lmstudio': { url: 'http://localhost:1234/v1', model: '' },
+            };
+            (function() {
+                var sel = document.getElementById('settings-ai-provider');
+                if (sel) sel.addEventListener('change', function() {
+                    var p = AI_PRESETS[this.value];
+                    if (p) {
+                        document.getElementById('settings-api-url').value = p.url;
+                        if (p.model) document.getElementById('settings-model').value = p.model;
+                    }
+                });
+            })();
 
             // 🌍 市場篩選（隱藏整個 tbody）
             function filterMarket(market) {
@@ -836,12 +1171,35 @@ def index():
 {% if is_pro %}
 
             function runAiAudit() {
-                const s = document.getElementById('auditSection'); const r = document.getElementById('auditResult');
-                s.classList.remove('hidden'); r.innerText = '{{ t.audit_loading }}';
+                const modal = document.getElementById('auditModal');
+                const result = document.getElementById('auditResult');
+                modal.classList.add('modal-active');
+                var provider = document.getElementById('settings-ai-provider');
+                var isLocal = provider && ['ollama','vllm','lmstudio'].includes(provider.value);
+                if (!isLocal && !confirm('{{ t.audit_confirm }}')) {
+                    modal.classList.remove('modal-active');
+                    return;
+                }
+                result.textContent = '{{ t.audit_loading }}';
                 fetch('/api/ai_audit', { method: 'POST' }).then(res => res.json()).then(data => {
-                    r.innerText = data.success ? data.report : '❌ Error: ' + data.error;
+                    if (data.success) {
+                        result.textContent = data.report;
+                    } else {
+                        result.textContent = '[Error] ' + data.error;
+                    }
+                }).catch(err => {
+                    result.textContent = '[Error] ' + err.message;
                 });
             }
+
+            function closeAuditModal() {
+                document.getElementById('auditModal').classList.remove('modal-active');
+            }
+
+            // Click outside modal to close
+            document.getElementById('auditModal').addEventListener('click', function(e) {
+                if (e.target === this) closeAuditModal();
+            });
 
             // 🧮 預計成本/收入即時計算
             {% endif %}
@@ -1052,7 +1410,9 @@ def index():
         </script>
     </body>
     </html>
-    """, t=t, stocks=stocks, open_tickers=open_tickers, ticker_market=ticker_market, total_mv_usd=total_mv_usd, total_open_cost=total_open_cost, total_pnl_usd=total_pnl_usd, total_roi_str=total_roi_str, usd_hkd=usd_hkd, sec_cur=sec_cur, watchlist_html=watchlist_html, targets_json=targets_json, markets_status=markets_status, active_markets=active_markets, version=VERSION, changelog=CHANGELOG, today_date=date_str, config=config, is_pro=IS_PRO)
+    """, t=t, stocks=stocks, open_tickers=open_tickers, ticker_market=ticker_market, total_mv_usd=total_mv_usd, total_open_cost=total_open_cost, total_pnl_usd=total_pnl_usd, total_roi_str=total_roi_str, usd_hkd=usd_hkd, sec_cur=sec_cur, watchlist_html=watchlist_html, targets_json=targets_json, markets_status=markets_status, active_markets=active_markets, version=VERSION, changelog=CHANGELOG, today_date=date_str, config=config, is_pro=IS_PRO,
+        total_mv_usd_raw=total_mv_usd, total_open_cost_raw=total_open_cost,
+        cash_balance=config.get("cash_balance", 0))
 
 # ==================== 🎯 5. Watchlist 管理 API ====================
 @app.route('/api/wl/add_category', methods=['POST'])
@@ -1194,7 +1554,13 @@ def api_save_config():
         config["ai_provider"] = request.form.get("ai_provider", "gemini")
         config["ai_model"] = request.form.get("ai_model", "").strip()
         config["custom_api_url"] = request.form.get("custom_api_url", "").strip()
+    if IS_PRO:
+        config["ai_timeout"] = int(request.form.get("ai_timeout", "60"))
+        config["prompt_level"] = request.form.get("prompt_level", "balanced")
+        config["custom_prompt"] = request.form.get("custom_prompt", "").strip()
+        config["prompt_mode"] = request.form.get("prompt_mode", "style")
     config["language"] = request.form.get("language", "zh_tw")
+    config["cash_balance"] = float(request.form.get("cash_balance", "0") or 0)
     config["secondary_currency"] = request.form.get("secondary_currency", "HKD")
     save_config(config)
     return redirect(url_for('index'))
@@ -1214,28 +1580,80 @@ def api_ai_audit():
     provider = config.get("ai_provider", "gemini")
     model_name = config.get("ai_model", "")
     base_url = config.get("custom_api_url", "")
-    if not api_key: return jsonify({'success': False, 'error': 'Please configure your API Key.'})
+    local_providers = {'ollama', 'vllm', 'lmstudio'}
+    if not api_key and provider not in local_providers:
+        return jsonify({'success': False, 'error': 'Please configure your API Key.'})
     
-    stocks, _, _, _, _, _, _ = calculate_portfolio_matrix()
-    clean_holding = [f"${s['ticker']}: Cost {s['avg_buy_price']} | Shares {s['total_shares']}" for s in stocks if s['status'] == 'OPEN']
-    if not clean_holding: return jsonify({'success': False, 'error': 'No open positions.'})
+    stocks, _, _, total_mv_usd, total_open_cost_usd, usd_hkd, sec_cur = calculate_portfolio_matrix()
+    open_stocks = [s for s in stocks if s['status'] == 'OPEN']
+    if not open_stocks: return jsonify({'success': False, 'error': 'No open positions.'})
     
-    prompt_text = f"Perform a CRO risk audit for stock portfolio: {', '.join(clean_holding)}. Macro context report: {get_latest_crucix_report()}"
+    # Build rich portfolio context
+    total_pnl = total_mv_usd - total_open_cost_usd
+    total_roi = (total_pnl / total_open_cost_usd * 100) if total_open_cost_usd > 0 else 0
+    
+    # Market allocation
+    market_mv = {}
+    for s in open_stocks:
+        mkt = s['market']
+        market_mv[mkt] = market_mv.get(mkt, 0) + float(s.get('current_mv', '0').replace(',', '') or '0')
+    alloc_lines = [f"  {m}: ${v:,.2f} ({v/total_mv_usd*100:.1f}%)" for m, v in sorted(market_mv.items(), key=lambda x: -x[1]) if total_mv_usd > 0]
+    
+    holding_lines = []
+    for s in open_stocks:
+        danger = " ⚠️ STOP-LOSS TRIGGERED" if s.get('is_danger') else ""
+        holding_lines.append(
+            f"${s['ticker']} [{s['market']}] | Shares: {s['total_shares']} | "
+            f"Avg Cost: ${s['avg_buy_price']} | Current: ${s['current_price']} | "
+            f"P&L: {s['pnl_usd_str']} | ROI: {s['roi_str']}{danger}"
+        )
+    
+    lang_map = {"zh_tw": "Traditional Chinese (繁體中文)", "zh_cn": "Simplified Chinese (簡體中文)", "en": "English"}
+    lang = lang_map.get(config.get("language", "zh_tw"), "Traditional Chinese (繁體中文)")
+
+    # Build summary strings for prompt templates
+    summary_str = f"Total MV: ${total_mv_usd:,.2f}, Cost: ${total_open_cost_usd:,.2f}, PnL: ${total_pnl:+,.2f} ({total_roi:+.2f}%), Holdings: {len(open_stocks)}"
+    holdings_str = "; ".join([f"${s['ticker']} [{s['market']}] Shs:{s['total_shares']} Cost:${s['avg_buy_price']} Now:${s['current_price']} PnL:{s['pnl_usd_str']} ROI:{s['roi_str']}" for s in open_stocks])
+    alloc_str = "; ".join(alloc_lines) if alloc_lines else "N/A"
+
+    custom = config.get("custom_prompt", "").strip()
+    level = config.get("prompt_level", "balanced")
+
+    prompt_mode = config.get("prompt_mode", "style")
+    if prompt_mode == "custom" and custom:
+        prompt_text = custom.replace("{summary}", summary_str).replace("{holdings}", holdings_str).replace("{alloc}", alloc_str)
+        if "{lang}" in custom:
+            prompt_text = prompt_text.replace("{lang}", lang)
+        else:
+            prompt_text += "\n\nRespond in " + lang + "."
+    elif level == "strict":
+        prompt_text = f"You are a strict risk-focused portfolio auditor. Be blunt about problems. Recommend concrete sell/stop-loss actions. Report in {lang}. Use markdown.\n\nPortfolio Summary: {summary_str}\nAllocation: {alloc_str}\n\nHoldings:\n{chr(10).join(holding_lines)}\n\nRequired Sections:\n1. Risk Audit — Flag EVERY danger, stop-loss violation, concentration issue\n2. Stop-Loss Compliance — Which holdings violated stops? Immediate actions required\n3. Sell Recommendations — Which positions to exit NOW and why\n4. Max 3 Hold/Buy picks with brief justification\n\nBe direct. No sugar-coating."
+    elif level == "relaxed":
+        prompt_text = f"You are an optimistic growth-focused portfolio coach. Highlight strengths and future potential. Suggest adding to winners. Report in {lang}. Use markdown.\n\nPortfolio Summary: {summary_str}\nAllocation: {alloc_str}\n\nHoldings:\n{chr(10).join(holding_lines)}\n\nRequired Sections:\n1. Growth Outlook — Market trends and tailwinds benefiting the portfolio\n2. Strength Analysis — What each holding is doing RIGHT\n3. Opportunity Spotting — Undervalued positions, add-more candidates\n4. Portfolio Expansion — New sectors or themes to consider\n\nBe encouraging. Focus on upside."
+    else:  # balanced (default)
+        prompt_text = f"You are a professional portfolio analyst. Provide a comprehensive portfolio analysis report in {lang}. Use markdown formatting with clear section headers.\n\n## Portfolio Overview\n- Total Market Value: ${total_mv_usd:,.2f} USD\n- Total Cost Basis: ${total_open_cost_usd:,.2f} USD\n- Total P&L: ${total_pnl:+,.2f} USD ({total_roi:+.2f}%)\n- Number of Holdings: {len(open_stocks)}\n\n## Market Allocation\n{chr(10).join(alloc_lines) if alloc_lines else '  N/A'}\n\n## Holdings Detail\n{chr(10).join(holding_lines)}\n\n## Required Analysis Sections\n1. Overall Assessment\n2. Per-Stock Analysis\n3. Risk Alerts\n4. Actionable Suggestions\n\nKeep it concise. Use a summary table."
     try:
         if provider == "gemini":
             if not base_url.endswith('/'): base_url += '/'
             url = f"{base_url}{model_name}:generateContent?key={api_key}"
             payload = {"contents": [{"role": "user", "parts": [{"text": prompt_text}]}]}
-            res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=30).json()
+            res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=config.get("ai_timeout", 60)).json()
             report = res['candidates'][0]['content']['parts'][0]['text']
         else:
             url = f"{base_url}/chat/completions" if not base_url.endswith('/chat/completions') else base_url
             headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
             payload = {"model": model_name, "messages": [{"role": "user", "content": prompt_text}], "temperature": 0.3}
-            res = requests.post(url, json=payload, headers=headers, timeout=30).json()
+            res = requests.post(url, json=payload, headers=headers, timeout=config.get("ai_timeout", 60)).json()
             report = res['choices'][0]['message']['content']
         return jsonify({'success': True, 'report': report})
-    except Exception as e: return jsonify({'success': False, 'error': str(e)})
+    except Timeout:
+        msg = 'Request timed out. Try increasing the timeout in Settings → AI Model.' if config.get('language','zh_tw') == 'en' else '請求超時，請在設定 → AI 模型 中調高 Timeout 秒數。'
+        return jsonify({'success': False, 'error': msg})
+    except ReqConnectionError:
+        msg = 'Cannot connect to AI server. Check your API URL in Settings → AI Model (is the service running?).' if config.get('language','zh_tw') == 'en' else '無法連線到 AI 伺服器，請檢查設定 → AI 模型中的 API URL（服務是否已啟動？）'
+        return jsonify({'success': False, 'error': msg})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/api/portfolio/realtime_feed')
 def api_portfolio_realtime_feed():
