@@ -1024,9 +1024,13 @@ def index():
     if CLOUD_MODE:
         # Return landing page for cloud mode (unauthenticated users)
         if not g.get("user_id"):
-            return render_template_string(LANDING_TEMPLATE,
-                supabase_url=SUPABASE_URL, supabase_key=SUPABASE_KEY,
-                version=VERSION)
+            try:
+                return render_template_string(LANDING_TEMPLATE,
+                    supabase_url=SUPABASE_URL, supabase_key=SUPABASE_KEY,
+                    version=VERSION)
+            except Exception as e:
+                import traceback
+                return f"<pre>Landing Error:\n{traceback.format_exc()}</pre>", 500
         # Authenticated users go to dashboard
         return redirect("/dashboard")
 
