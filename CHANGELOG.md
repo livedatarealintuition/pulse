@@ -1,5 +1,11 @@
 # Pulse Changelog
 
+## Session 9 — V1.91 (2026-07-26)
+**1 item**
+
+### V1.91
+- CLOUD_MODE: Supabase auth (login/logout), dark mode toggle, data layer dispatch
+
 ## Session 8 — V1.8 → V1.820 (2026-07-22 ~ 23)
 **20 items total**
 

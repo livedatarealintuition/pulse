@@ -34,9 +34,10 @@ PORTFOLIO_JSON = os.path.join(BASE_DIR, "portfolio.json")
 WATCHLIST_JSON = os.path.join(BASE_DIR, "watchlist.json")  
 CONFIG_JSON = os.path.join(BASE_DIR, "system_config.json")
 
-VERSION = "V1.820"
+VERSION = "V1.91"
 IS_PRO = False  # 由 pulse_pro.py 覆蓋為 True
 CHANGELOG = [
+    ("V1.91", "[Session 9] CLOUD_MODE: Supabase auth, dark mode, logout, data layer dispatch"),
     ("V1.820", "[Session 8] 20 items: Editable prompt (3 levels), mode toggle, i18n rebuild, Weight%, Market Dist, Cash Ratio, API confirm, smart errors, settings tabs, timeout, modal, label a11y"),
     ("V1.8", "[Session 8] AI Audit: rich portfolio prompt + local inference presets (Ollama/vLLM/LM Studio)"),
     ("V1.716", "[Session 7] Remove Crucix macro report integration"),
