@@ -425,6 +425,9 @@ def load_watchlist():
         for r in (rows.data or []):
             cat = r.get("category", "Default")
             ticker = r["ticker"].upper()
+            if ticker == "__EMPTY__":
+                cats.setdefault(cat, [])  # ensure category exists even if empty
+                continue
             cats.setdefault(cat, []).append(ticker)
             if r.get("target_price"):
                 targets[ticker] = float(r["target_price"])
@@ -457,6 +460,14 @@ def save_watchlist(data):
                 sort += 1
         if rows:
             supabase_admin.table("watchlist").insert(rows).execute()
+        # Save empty categories (no tickers yet) as placeholder rows
+        for cat_name, tickers in data.get("categories", {}).items():
+            if not tickers:
+                supabase_admin.table("watchlist").insert({
+                    "user_id": g.user_id, "category": cat_name,
+                    "ticker": "__empty__", "sort_order": sort
+                }).execute()
+                sort += 1
     except Exception as e:
         print(f"[save_watchlist] Supabase error: {e}")
 def load_config():
@@ -768,7 +779,7 @@ def build_watchlist_html(t):
             color = "text-emerald-400" if change >= 0 else "text-rose-500"
             arrow = "▲ +" if change > 0 else ("▼ " if change < 0 else "■ ")
             target_price = targets.get(tk)
-            if IS_PRO:
+            if get_is_pro():
                 if target_price:
                     target_html = '<span id="wl-target-' + tk + '"><button onclick="deleteTarget(\'' + tk + '\')" class="text-[9px] text-amber-400 hover:text-rose-400 font-mono" title="刪除目標價">🎯$' + f'{target_price:.2f}' + ' ✕</button></span>'
                 else:
@@ -1795,10 +1806,18 @@ def _render_dashboard():
             {% if CLOUD_MODE %}
             function logout() {
                 if (typeof supabase !== 'undefined' && supabase.auth) {
-                    supabase.auth.signOut().catch(function(){});
+                    supabase.auth.signOut().then(function() {
+                        // Clear all Supabase localStorage
+                        for (var i = 0; i < localStorage.length; i++) {
+                            var key = localStorage.key(i);
+                            if (key && key.indexOf('sb-') === 0) localStorage.removeItem(key);
+                        }
+                        document.cookie = 'sb-access-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+                        window.location.href = '/';
+                    }).catch(function(){});
+                } else {
+                    window.location.href = '/';
                 }
-                document.cookie = 'sb-access-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-                window.location.href = '/';
             }
             {% endif %}
         </script>
