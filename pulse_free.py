@@ -1,30 +1,15 @@
 import os
 import json
-import secrets
 import requests
 from requests.exceptions import Timeout, ConnectionError as ReqConnectionError
 import time
 import threading
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from flask import Flask, render_template_string, request, redirect, url_for, jsonify, send_from_directory, g
+from flask import Flask, render_template_string, request, redirect, url_for, jsonify, send_from_directory
 import yfinance as yf
 
 app = Flask(__name__)
-CLOUD_MODE = os.getenv("CLOUD_MODE", "").lower() in ("1", "true", "yes", "cloud")
-
-if CLOUD_MODE:
-    from supabase import create_client
-
-    SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-    SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")             # anon key (for auth)
-    SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")  # service_role (for DB)
-
-    if not SUPABASE_URL:
-        raise RuntimeError("CLOUD_MODE is enabled but SUPABASE_URL is not set")
-
-    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)           # auth client
-    supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)  # DB client (bypasses RLS)
 
 # ==================== 🎯 1. 基礎路徑與配置 ====================
 # 用 PULSE_HOME 環境變數指向 data 目錄，未設定時 fallback 到 script 所在目錄
@@ -363,122 +348,12 @@ def save_json_file(path, data):
             json.dump(data, f, indent=4, ensure_ascii=False)
         os.replace(tmp, path)
 
-def load_portfolio():
-    """Load portfolio transactions. JSON (selfhosted) or Supabase (cloud)."""
-    if not CLOUD_MODE:
-        return load_json_file(PORTFOLIO_JSON, [])
-    try:
-        rows = supabase_admin.table("transactions").select("*").eq("user_id", g.user_id).order("date").execute()
-        result = []
-        for r in (rows.data or []):
-            result.append({
-                "type": r["type"],
-                "market": r.get("market", "US"),
-                "date": r["date"],
-                "ticker": r["ticker"].upper(),
-                "price": str(r["price"]),
-                "commission": str(r.get("commission", 0)),
-                "shares": str(r["shares"])
-            })
-        return result
-    except Exception as e:
-        print(f"[load_portfolio] Supabase error: {e}")
-        return []
-
-def save_portfolio(data):
-    """Save portfolio transactions atomically. JSON (selfhosted) or Supabase (cloud)."""
-    if not CLOUD_MODE:
-        save_json_file(PORTFOLIO_JSON, data)
-        return
-    try:
-        supabase_admin.table("transactions").delete().eq("user_id", g.user_id).execute()
-        if data:
-            rows = []
-            for tx in data:
-                rows.append({
-                    "user_id": g.user_id,
-                    "ticker": tx["ticker"].upper(),
-                    "type": tx["type"],
-                    "market": tx.get("market", "US"),
-                    "date": tx["date"],
-                    "price": float(tx["price"]),
-                    "shares": float(tx["shares"]),
-                    "commission": float(tx.get("commission", 0))
-                })
-            supabase_admin.table("transactions").insert(rows).execute()
-    except Exception as e:
-        print(f"[save_portfolio] Supabase error: {e}")
-def load_watchlist():
-    """Load watchlist. JSON (selfhosted) or Supabase (cloud)."""
-    if not CLOUD_MODE:
-        return load_json_file(WATCHLIST_JSON, {"categories": {}})
-    try:
-        rows = supabase_admin.table("watchlist").select("*").eq("user_id", g.user_id).order("sort_order").execute()
-        cats = {}
-        targets = {}
-        for r in (rows.data or []):
-            cat = r.get("category", "Default")
-            ticker = r["ticker"].upper()
-            cats.setdefault(cat, []).append(ticker)
-            if r.get("target_price"):
-                targets[ticker] = float(r["target_price"])
-        return {"categories": cats, "targets": targets}
-    except Exception as e:
-        print(f"[load_watchlist] Supabase error: {e}")
-        return {"categories": {}}
-
-def save_watchlist(data):
-    """Save watchlist. JSON (selfhosted) or Supabase (cloud)."""
-    if not CLOUD_MODE:
-        save_json_file(WATCHLIST_JSON, data)
-        return
-    try:
-        supabase_admin.table("watchlist").delete().eq("user_id", g.user_id).execute()
-        rows = []
-        sort = 0
-        targets = data.get("targets", {})
-        for cat_name, tickers in data.get("categories", {}).items():
-            for tk in tickers:
-                row = {
-                    "user_id": g.user_id,
-                    "category": cat_name,
-                    "ticker": tk.upper(),
-                    "sort_order": sort,
-                }
-                if tk in targets:
-                    row["target_price"] = targets[tk]
-                rows.append(row)
-                sort += 1
-        if rows:
-            supabase_admin.table("watchlist").insert(rows).execute()
-    except Exception as e:
-        print(f"[save_watchlist] Supabase error: {e}")
-def load_config():
-    """Load user config. JSON (selfhosted) or Supabase profiles (cloud)."""
-    if not CLOUD_MODE:
-        return load_json_file(CONFIG_JSON, DEFAULT_CONFIG)
-    try:
-        profile = supabase_admin.table("profiles").select("*").eq("user_id", g.user_id).single().execute()
-        if profile.data:
-            return {**DEFAULT_CONFIG, **profile.data}
-        supabase_admin.table("profiles").insert({"user_id": g.user_id}).execute()
-        return dict(DEFAULT_CONFIG)
-    except Exception as e:
-        print(f"[load_config] Supabase error: {e}")
-        return dict(DEFAULT_CONFIG)
-
-def save_config(data):
-    """Save user config. JSON (selfhosted) or Supabase profiles (cloud)."""
-    if not CLOUD_MODE:
-        save_json_file(CONFIG_JSON, data)
-        return
-    try:
-        supabase_admin.table("profiles").upsert({
-            "user_id": g.user_id,
-            **data
-        }).execute()
-    except Exception as e:
-        print(f"[save_config] Supabase error: {e}")
+def load_portfolio(): return load_json_file(PORTFOLIO_JSON, [])
+def save_portfolio(data): save_json_file(PORTFOLIO_JSON, data)
+def load_watchlist(): return load_json_file(WATCHLIST_JSON, {"categories": {}})
+def save_watchlist(data): save_json_file(WATCHLIST_JSON, data)
+def load_config(): return load_json_file(CONFIG_JSON, DEFAULT_CONFIG)
+def save_config(data): save_json_file(CONFIG_JSON, data)
 
 # ==================== 🎯 2. 數據抓取與工具 (yfinance) ====================
 ATR_CACHE = {}
@@ -787,252 +662,9 @@ def build_watchlist_html(t):
         html += "</div></div>"
     return html
 
-# ==================== 🎯 AUTH MIDDLEWARE (CLOUD MODE) ====================
-PUBLIC_PATHS = {"/", "/health", "/webhook", "/pulse_logo.png", "/pulse.css"}
-
-@app.before_request
-def cloud_auth_middleware():
-    """JWT auth middleware — active only in CLOUD_MODE."""
-    if not CLOUD_MODE:
-        return  # no-op for selfhosted
-
-    g.user_id = None
-    g.tier = "free"
-
-    if request.path in PUBLIC_PATHS or request.path.startswith("/static/"):
-        return
-
-    token = request.headers.get("Authorization", "").replace("Bearer ", "")
-    if not token:
-        token = request.cookies.get("sb-access-token")
-
-    if not token:
-        if request.path.startswith("/api/"):
-            return jsonify({"error": "Unauthorized"}), 401
-        return redirect("/")
-
-    try:
-        user_resp = supabase.auth.get_user(token)
-        g.user_id = user_resp.user.id
-    except Exception as e:
-        err_msg = str(e).lower()
-        if "expired" in err_msg:
-            if request.path.startswith("/api/"):
-                return jsonify({"error": "Token expired"}), 401
-            return redirect("/")
-        if request.path.startswith("/api/"):
-            return jsonify({"error": "Invalid token"}), 401
-        return redirect("/")
-
-    try:
-        profile = supabase_admin.table("profiles").select("tier").eq("user_id", g.user_id).single().execute()
-        if profile.data:
-            g.tier = profile.data.get("tier", "free")
-    except Exception:
-        g.tier = "free"
-
-
-def get_is_pro():
-    """Return True if user has Pro features.
-    Selfhosted: checks IS_PRO module flag.
-    Cloud: checks g.tier from Supabase profiles."""
-    if CLOUD_MODE:
-        return g.get("tier", "free") == "pro"
-    return IS_PRO
-
-
-# ==================== 🎯 LANDING PAGE (CLOUD MODE ONLY) ====================
-LANDING_PAGE_HTML = r"""<!DOCTYPE html>
-<html lang="en" class="dark">
-<head>
-    <meta charset="UTF-8">
-    <title>Pulse — Live Data · Real Intuition</title>
-    <link rel="icon" href="/pulse_logo.png" type="image/png">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <style>
-        * { margin:0; padding:0; box-sizing:border-box; }
-        body {
-            background: linear-gradient(135deg, #020617 0%, #0f172a 50%, #1e1b4b 100%);
-            color: #e2e8f0; font-family: system-ui, -apple-system, sans-serif;
-            min-height: 100vh; display: flex; flex-direction: column; align-items: center;
-        }
-        .container { max-width: 480px; width: 100%; padding: 40px 20px; }
-        .logo { text-align: center; margin-bottom: 40px; }
-        .logo h1 { font-size: 3rem; font-weight: 900; letter-spacing: -0.03em;
-            background: linear-gradient(135deg, #34d399, #22d3ee);
-            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-            background-clip: text; }
-        .logo p { color: #94a3b8; font-size: 0.9rem; margin-top: 8px; }
-        .card {
-            background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 16px; padding: 32px; backdrop-filter: blur(12px);
-        }
-        .card h2 { font-size: 1.2rem; font-weight: 700; margin-bottom: 24px; color: #e2e8f0; }
-        .card label { display: block; font-size: 0.75rem; font-weight: 600;
-            color: #94a3b8; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
-        .card input {
-            width: 100%; padding: 12px 16px; margin-bottom: 16px;
-            background: #1e293b; border: 1px solid #334155; border-radius: 8px;
-            color: #e2e8f0; font-size: 0.95rem; outline: none; transition: border 0.2s;
-        }
-        .card input:focus { border-color: #22d3ee; }
-        .btn {
-            width: 100%; padding: 12px; border-radius: 8px; font-weight: 700;
-            font-size: 0.95rem; cursor: pointer; transition: all 0.2s; border: none;
-        }
-        .btn-primary { background: linear-gradient(135deg, #22d3ee, #34d399);
-            color: #0f172a; margin-bottom: 12px; }
-        .btn-primary:hover { opacity: 0.9; transform: translateY(-1px); }
-        .btn-google {
-            background: #1e293b; color: #e2e8f0; border: 1px solid #334155;
-            display: flex; align-items: center; justify-content: center; gap: 8px;
-        }
-        .btn-google:hover { background: #334155; }
-        .divider {
-            display: flex; align-items: center; gap: 12px;
-            color: #64748b; font-size: 0.75rem; margin: 20px 0;
-        }
-        .divider::before, .divider::after {
-            content: ""; flex: 1; height: 1px; background: #334155;
-        }
-        .toggle { text-align: center; font-size: 0.85rem; color: #94a3b8; margin-top: 16px; }
-        .toggle a { color: #22d3ee; cursor: pointer; text-decoration: none; font-weight: 600; }
-        .toggle a:hover { text-decoration: underline; }
-        .error { background: rgba(239,68,68,0.15); color: #fca5a5; padding: 10px 14px;
-            border-radius: 8px; font-size: 0.8rem; margin-bottom: 16px; display: none; }
-        .error.show { display: block; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="logo">
-            <h1>Pulse</h1>
-            <p>Live Data &middot; Real Intuition</p>
-        </div>
-        <div class="card" id="auth-card">
-            <div class="error" id="auth-error"></div>
-
-            <div id="signin-form">
-                <h2>Sign In</h2>
-                <label for="signin-email">Email</label>
-                <input type="email" id="signin-email" placeholder="you@example.com">
-                <label for="signin-password">Password</label>
-                <input type="password" id="signin-password" placeholder="••••••••">
-                <button class="btn btn-primary" onclick="signIn()">Sign In</button>
-                <button class="btn btn-google" onclick="signInWithGoogle()">
-                    <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
-                    Continue with Google
-                </button>
-                <div class="toggle">Don't have an account? <a onclick="toggleAuthMode('signup')">Sign Up</a></div>
-            </div>
-
-            <div id="signup-form" style="display:none;">
-                <h2>Create Account</h2>
-                <label for="signup-email">Email</label>
-                <input type="email" id="signup-email" placeholder="you@example.com">
-                <label for="signup-password">Password</label>
-                <input type="password" id="signup-password" placeholder="•••••••• (min 8 characters)">
-                <button class="btn btn-primary" onclick="signUp()">Create Account</button>
-                <div class="toggle">Already have an account? <a onclick="toggleAuthMode('signin')">Sign In</a></div>
-            </div>
-        </div>
-    </div>
-
-    <script>
-        const SUPABASE_URL = "{{ supabase_url }}";
-        const SUPABASE_KEY = "{{ supabase_key }}";
-        const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-
-        function showError(msg) {
-            const el = document.getElementById('auth-error');
-            el.textContent = msg;
-            el.classList.add('show');
-            setTimeout(function(){ el.classList.remove('show'); }, 5000);
-        }
-
-        function setCookie(name, value, days) {
-            var expires = '';
-            if (days) {
-                var d = new Date();
-                d.setTime(d.getTime() + (days * 86400000));
-                expires = '; expires=' + d.toUTCString();
-            }
-            document.cookie = name + '=' + (value || '') + expires + '; path=/; SameSite=Lax';
-        }
-
-        function toggleAuthMode(mode) {
-            document.getElementById('signin-form').style.display = (mode === 'signin') ? '' : 'none';
-            document.getElementById('signup-form').style.display = (mode === 'signup') ? '' : 'none';
-            document.getElementById('auth-error').classList.remove('show');
-        }
-
-        async function signIn() {
-            const email = document.getElementById('signin-email').value.trim();
-            const password = document.getElementById('signin-password').value;
-            if (!email || !password) { showError('Please enter email and password.'); return; }
-            try {
-                const { data, error } = await sb.auth.signInWithPassword({ email: email, password: password });
-                if (error) { showError(error.message); return; }
-                if (data.session && data.session.access_token) {
-                    setCookie('sb-access-token', data.session.access_token, 7);
-                    window.location.href = '/dashboard';
-                }
-            } catch(e) { showError('Sign in failed. Please try again.'); }
-        }
-
-        async function signUp() {
-            const email = document.getElementById('signup-email').value.trim();
-            const password = document.getElementById('signup-password').value;
-            if (!email || !password) { showError('Please enter email and password.'); return; }
-            if (password.length < 8) { showError('Password must be at least 8 characters.'); return; }
-            try {
-                const { data, error } = await sb.auth.signUp({ email: email, password: password });
-                if (error) { showError(error.message); return; }
-                if (data.session && data.session.access_token) {
-                    setCookie('sb-access-token', data.session.access_token, 7);
-                    window.location.href = '/dashboard';
-                } else {
-                    showError('Please check your email for a confirmation link.');
-                }
-            } catch(e) { showError('Sign up failed. Please try again.'); }
-        }
-
-        async function signInWithGoogle() {
-            try {
-                const { data, error } = await sb.auth.signInWithOAuth({
-                    provider: 'google',
-                    options: { redirectTo: window.location.origin + '/dashboard' }
-                });
-                if (error) { showError(error.message); }
-            } catch(e) { showError('Google sign in failed.'); }
-        }
-
-        (async function() {
-            const { data: { session } } = await sb.auth.getSession();
-            if (session && session.access_token) {
-                setCookie('sb-access-token', session.access_token, 7);
-                window.location.href = '/dashboard';
-            }
-        })();
-    </script>
-</body>
-</html>"""
-
-
-def render_landing_page():
-    """Render the cloud landing page with Supabase auth UI."""
-    return render_template_string(
-        LANDING_PAGE_HTML,
-        supabase_url=SUPABASE_URL,
-        supabase_key=SUPABASE_KEY
-    )
-
-
 # ==================== 🎯 4. 路由控制 ====================
-
-def _render_dashboard():
-    """Render the Pulse dashboard — shared between selfhosted index() and cloud /dashboard."""
+@app.route('/')
+def index():
     config = load_config()
     if "secondary_currency" not in config:
         config["secondary_currency"] = "HKD"
@@ -1049,7 +681,6 @@ def _render_dashboard():
     date_str = datetime.now().strftime("%Y-%m-%d")
     is_active = check_us_market_active_hours()
     markets_status = {k: is_market_open(k) for k in MARKETS}
-    is_pro = get_is_pro()
 
     return render_template_string("""
     <!DOCTYPE html>
@@ -1058,17 +689,7 @@ def _render_dashboard():
         <meta charset="UTF-8">
         <title>Pulse — Live Data · Real Intuition</title>
         <link rel="icon" href="/pulse_logo.png" type="image/png">
-        {% if CLOUD_MODE %}
-        <script src="https://cdn.tailwindcss.com"></script>
-        <script>
-            tailwind.config = {
-                darkMode: 'class',
-                theme: { extend: {} }
-            };
-        </script>
-        {% else %}
         <link rel="stylesheet" href="/pulse.css">
-        {% endif %}
         <style>
             @keyframes pulse-alert { 0%, 100% { background-color: rgba(159, 18, 57, 0.2); } 50% { background-color: rgba(225, 29, 72, 0.5); } }
             .danger-row { animation: pulse-alert 2s infinite; border-left: 4px solid #f43f5e; }
@@ -1244,9 +865,6 @@ def _render_dashboard():
                     </div>
                     {% if is_pro %}<button onclick="runAiAudit()" class="px-5 py-2.5 bg-gradient-to-r from-cyan-500 to-emerald-500 font-bold rounded-lg text-xs tracking-widest">{{ t.ai_report_btn }}</button>{% endif %}
                     <button onclick="toggleSettingsModal()" class="p-2.5 bg-slate-900 border border-slate-800 rounded-lg text-slate-300">⚙️</button>
-                    {% if CLOUD_MODE %}
-                    <button onclick="logout()" class="px-3 py-2.5 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-400 hover:text-rose-400 hover:border-rose-700 transition-colors font-bold">Logout</button>
-                    {% endif %}
                 </div>
             </div>
 
@@ -1787,67 +1405,13 @@ def _render_dashboard():
                 .then(r => { location.reload(); })
                 .catch(() => {});
             }
-            {% if CLOUD_MODE %}
-            function logout() {
-                if (typeof supabase !== 'undefined' && supabase.auth) {
-                    supabase.auth.signOut().catch(function(){});
-                }
-                document.cookie = 'sb-access-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-                window.location.href = '/';
-            }
-            {% endif %}
         </script>
-        {% if CLOUD_MODE %}
-        <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-        <script>
-            const sb = supabase.createClient("{{ supabase_url }}", "{{ supabase_key }}");
-        </script>
-        {% endif %}
     </body>
     </html>
-    """, t=t, stocks=stocks, open_tickers=open_tickers, ticker_market=ticker_market,
-        total_mv_usd=total_mv_usd, total_open_cost=total_open_cost,
-        total_pnl_usd=total_pnl_usd, total_roi_str=total_roi_str,
-        usd_hkd=usd_hkd, sec_cur=sec_cur, watchlist_html=watchlist_html,
-        targets_json=targets_json, markets_status=markets_status,
-        active_markets=active_markets, version=VERSION, changelog=CHANGELOG,
-        today_date=date_str, config=config, is_pro=get_is_pro(),
-        CLOUD_MODE=CLOUD_MODE,
-        supabase_url=SUPABASE_URL if CLOUD_MODE else "",
-        supabase_key=SUPABASE_KEY if CLOUD_MODE else "",
+    """, t=t, stocks=stocks, open_tickers=open_tickers, ticker_market=ticker_market, total_mv_usd=total_mv_usd, total_open_cost=total_open_cost, total_pnl_usd=total_pnl_usd, total_roi_str=total_roi_str, usd_hkd=usd_hkd, sec_cur=sec_cur, watchlist_html=watchlist_html, targets_json=targets_json, markets_status=markets_status, active_markets=active_markets, version=VERSION, changelog=CHANGELOG, today_date=date_str, config=config, is_pro=IS_PRO,
         total_mv_usd_raw=total_mv_usd, total_open_cost_raw=total_open_cost,
         cash_balance=config.get("cash_balance", 0))
 
-
-@app.route('/')
-def index():
-    """Main route. Cloud: landing page (if unauthenticated) or redirect to /dashboard.
-    Selfhosted: render dashboard directly."""
-    if CLOUD_MODE:
-        token = request.cookies.get("sb-access-token")
-        if token:
-            try:
-                supabase.auth.get_user(token)
-                return redirect("/dashboard")
-            except Exception:
-                pass
-        return render_landing_page()
-    return _render_dashboard()
-
-
-@app.route('/dashboard')
-def dashboard():
-    """Dashboard route. Cloud: auth-gated. Selfhosted: redirect to /."""
-    if CLOUD_MODE:
-        return _render_dashboard()
-    return redirect("/")
-
-
-@app.route('/health')
-def health():
-    if CLOUD_MODE:
-        return jsonify({"status": "ok", "cache_size": len(PRICE_CACHE)})
-    return jsonify({"status": "ok"})
 # ==================== 🎯 5. Watchlist 管理 API ====================
 @app.route('/api/wl/add_category', methods=['POST'])
 def api_wl_add_category():
@@ -1931,7 +1495,7 @@ def api_wl_reorder_categories():
 
 @app.route('/api/wl/set_target', methods=['POST'])
 def api_wl_set_target():
-    if not get_is_pro(): return jsonify({'error': 'Pro feature'}), 403
+    if not IS_PRO: return jsonify({'error': 'Pro feature'}), 403
     data = request.get_json()
     ticker = data.get('ticker', '').strip().upper()
     price = data.get('price')
@@ -1948,7 +1512,7 @@ def api_wl_set_target():
 
 @app.route('/api/wl/delete_target', methods=['POST'])
 def api_wl_delete_target():
-    if not get_is_pro(): return jsonify({'error': 'Pro feature'}), 403
+    if not IS_PRO: return jsonify({'error': 'Pro feature'}), 403
     data = request.get_json()
     ticker = data.get('ticker', '').strip().upper()
     wl = load_watchlist()
@@ -1960,7 +1524,7 @@ def api_wl_delete_target():
 
 @app.route('/api/wl/targets', methods=['GET'])
 def api_wl_targets():
-    if not get_is_pro(): return jsonify({'error': 'Pro feature'}), 403
+    if not IS_PRO: return jsonify({'error': 'Pro feature'}), 403
     wl = load_watchlist()
     targets = wl.get('targets', {})
     # Return targets with current prices
@@ -1983,12 +1547,12 @@ def delete_entry(index):
 @app.route('/api/config/save', methods=['POST'])
 def api_save_config():
     config = load_config()
-    if get_is_pro():
+    if IS_PRO:
         config["api_key"] = request.form.get("api_key", "").strip()
         config["ai_provider"] = request.form.get("ai_provider", "gemini")
         config["ai_model"] = request.form.get("ai_model", "").strip()
         config["custom_api_url"] = request.form.get("custom_api_url", "").strip()
-    if get_is_pro():
+    if IS_PRO:
         config["ai_timeout"] = int(request.form.get("ai_timeout", "60"))
         config["prompt_level"] = request.form.get("prompt_level", "balanced")
         config["custom_prompt"] = request.form.get("custom_prompt", "").strip()
@@ -2008,7 +1572,7 @@ def api_update_interval():
 
 @app.route('/api/ai_audit', methods=['POST'])
 def api_ai_audit():
-    if not get_is_pro(): return jsonify({'error': 'Pro feature'}), 403
+    if not IS_PRO: return jsonify({'error': 'Pro feature'}), 403
     config = load_config()
     api_key = config.get("api_key", "")
     provider = config.get("ai_provider", "gemini")
