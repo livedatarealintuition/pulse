@@ -6,34 +6,8 @@ import time
 import threading
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from flask import Flask, render_template_string, request, redirect, url_for, jsonify, send_from_directory, g, abort
+from flask import Flask, render_template_string, request, redirect, url_for, jsonify, send_from_directory
 import yfinance as yf
-
-CLOUD_MODE = os.getenv("CLOUD_MODE", "").lower() in ("1", "true", "yes", "cloud")
-
-if CLOUD_MODE:
-    from supabase import create_client
-    import stripe
-    SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-    SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
-    SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
-    if not SUPABASE_URL:
-        raise RuntimeError("CLOUD_MODE is enabled but SUPABASE_URL is not set")
-    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-    supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-    STRIPE_SECRET = os.getenv("STRIPE_SECRET", "")
-    STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
-    STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID", "")
-    FREE_DAILY_LIMIT = int(os.getenv("FREE_DAILY_LIMIT", "5"))
-else:
-    supabase = None
-    supabase_admin = None
-    SUPABASE_URL = ""
-    SUPABASE_KEY = ""
-    STRIPE_SECRET = ""
-    STRIPE_WEBHOOK_SECRET = ""
-    STRIPE_PRICE_ID = ""
-    FREE_DAILY_LIMIT = 999999
 
 app = Flask(__name__)
 
@@ -67,181 +41,6 @@ DEFAULT_CONFIG = {
     "custom_prompt": "",
     "prompt_mode": "style"
 }
-LANDING_TEMPLATE = """
-<!DOCTYPE html>
-<html lang="en" class="dark">
-<head>
-    <meta charset="UTF-8">
-    <title>Pulse — Investment Portfolio Tracker</title>
-    <link rel="icon" href="/pulse_logo.png" type="image/png">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { background: #020617; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100vh; }
-        .container { max-width: 1100px; margin: 0 auto; padding: 40px 20px; }
-        .hero { text-align: center; padding: 80px 20px 60px; }
-        .hero h1 { font-size: 4rem; font-weight: 900; background: linear-gradient(135deg, #34d399, #22d3ee); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-        .hero p { color: #94a3b8; font-size: 1.2rem; margin-top: 16px; }
-        .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 24px; margin: 60px 0; }
-        .feature-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 16px; padding: 28px 24px; text-align: center; }
-        .feature-card .icon { font-size: 2.5rem; margin-bottom: 12px; }
-        .feature-card h3 { font-size: 1.1rem; font-weight: 700; color: #34d399; margin-bottom: 8px; }
-        .feature-card p { color: #64748b; font-size: 0.9rem; line-height: 1.5; }
-        .pricing { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; margin: 60px 0; }
-        .pricing-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 16px; padding: 32px 28px; text-align: center; }
-        .pricing-card.pro { border-color: #22d3ee; background: linear-gradient(135deg, #0f172a, #0c1929); }
-        .pricing-card h3 { font-size: 1.3rem; font-weight: 800; margin-bottom: 8px; }
-        .pricing-card .price { font-size: 2.5rem; font-weight: 900; color: #22d3ee; margin: 16px 0; }
-        .pricing-card .price span { font-size: 1rem; color: #64748b; }
-        .pricing-card ul { list-style: none; text-align: left; margin: 20px 0; color: #94a3b8; font-size: 0.9rem; line-height: 2; }
-        .pricing-card ul li::before { content: "✓ "; color: #34d399; font-weight: bold; }
-        .btn { display: inline-block; padding: 12px 32px; border-radius: 12px; font-weight: 700; font-size: 1rem; cursor: pointer; border: none; transition: all 0.2s; text-decoration: none; }
-        .btn-primary { background: linear-gradient(135deg, #34d399, #22d3ee); color: #020617; }
-        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(34, 211, 238, 0.3); }
-        .btn-outline { background: transparent; border: 2px solid #22d3ee; color: #22d3ee; }
-        .btn-outline:hover { background: rgba(34, 211, 238, 0.1); }
-        .auth-section { text-align: center; padding: 40px 0 20px; }
-        .auth-section h2 { font-size: 1.5rem; margin-bottom: 20px; }
-        .auth-form { display: flex; flex-direction: column; gap: 12px; max-width: 360px; margin: 0 auto; }
-        .auth-form input { padding: 12px 16px; border-radius: 10px; border: 1px solid #1e293b; background: #0f172a; color: #e2e8f0; font-size: 1rem; }
-        .auth-form input:focus { outline: none; border-color: #22d3ee; }
-        .auth-form button { margin-top: 8px; }
-        .footer { text-align: center; padding: 60px 20px 20px; color: #475569; font-size: 0.8rem; }
-        .divider { display: flex; align-items: center; gap: 16px; margin: 20px 0; color: #475569; font-size: 0.85rem; }
-        .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: #1e293b; }
-        #auth-message { color: #f87171; font-size: 0.85rem; margin-top: 8px; display: none; }
-    </style>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-</head>
-<body>
-    <div class="container">
-        <div class="hero">
-            <h1>Pulse</h1>
-            <p>Live Data · Real Intuition — Track your portfolio across US, HK, CN, TW markets</p>
-        </div>
-
-        <div class="features">
-            <div class="feature-card">
-                <div class="icon">📊</div>
-                <h3>Multi-Market</h3>
-                <p>Track US, HK, CN, and TW stocks in one unified dashboard with real-time prices.</p>
-            </div>
-            <div class="feature-card">
-                <div class="icon">🤖</div>
-                <h3>AI Analysis</h3>
-                <p>Get AI-powered portfolio audit reports with risk assessment and recommendations.</p>
-            </div>
-            <div class="feature-card">
-                <div class="icon">📈</div>
-                <h3>Live Tracking</h3>
-                <p>Real-time price updates, P&L calculation, stop-loss alerts, and target price monitoring.</p>
-            </div>
-            <div class="feature-card">
-                <div class="icon">🔍</div>
-                <h3>Smart Watchlist</h3>
-                <p>Organized watchlists with drag-and-drop, target prices, and instant price checking.</p>
-            </div>
-            <div class="feature-card">
-                <div class="icon">🌍</div>
-                <h3>Multi-Currency</h3>
-                <p>View in USD, HKD, TWD, CNY, JPY, EUR, or GBP with live forex rates.</p>
-            </div>
-        </div>
-
-        <div class="pricing">
-            <div class="pricing-card">
-                <h3>Free</h3>
-                <div class="price">$0<span>/month</span></div>
-                <ul>
-                    <li>Unlimited portfolio tracking</li>
-                    <li>Real-time price data</li>
-                    <li>Multi-market support</li>
-                    <li>Watchlist management</li>
-                    <li>Basic analytics</li>
-                </ul>
-            </div>
-            <div class="pricing-card pro">
-                <h3>Pro</h3>
-                <div class="price">$5<span>/month</span></div>
-                <ul>
-                    <li>Everything in Free</li>
-                    <li>AI portfolio audit reports</li>
-                    <li>Advanced analytics & charts</li>
-                    <li>Target price alerts</li>
-                    <li>Custom AI model configuration</li>
-                    <li>Priority background updates</li>
-                </ul>
-            </div>
-        </div>
-
-        <div class="auth-section">
-            <h2>Get Started</h2>
-            <div class="auth-form" id="auth-form">
-                <button class="btn btn-outline" onclick="signInWithGoogle()">Sign in with Google</button>
-                <div class="divider">or</div>
-                <input type="email" id="auth-email" placeholder="Email address">
-                <input type="password" id="auth-password" placeholder="Password">
-                <button class="btn btn-primary" onclick="signInWithEmail()">Continue</button>
-                <div id="auth-message"></div>
-            </div>
-        </div>
-
-        <div class="footer">
-            <p>Pulse v{{ version }} — Self-host your own data or use Pulse Cloud.</p>
-            <p><a href="https://github.com/nousresearch/pulse" style="color:#22d3ee;">View on GitHub</a></p>
-        </div>
-    </div>
-
-    <script>
-        const supabaseClient = supabase.createClient("{{ supabase_url }}", "{{ supabase_key }}");
-        function setCookie(name, value) {
-            document.cookie = name + "=" + value + ";path=/;max-age=86400;SameSite=Lax";
-        }
-        function showMessage(msg, isError) {
-            const el = document.getElementById("auth-message");
-            el.textContent = msg;
-            el.style.color = isError ? "#f87171" : "#34d399";
-            el.style.display = "block";
-        }
-        function redirectToDashboard() { window.location.href = "/dashboard"; }
-        async function signInWithGoogle() {
-            const { data, error } = await supabaseClient.auth.signInWithOAuth({
-                provider: "google",
-                options: { redirectTo: window.location.origin + "/dashboard" }
-            });
-            if (error) showMessage(error.message, true);
-        }
-        async function signInWithEmail() {
-            const email = document.getElementById("auth-email").value;
-            const password = document.getElementById("auth-password").value;
-            if (!email || !password) { showMessage("Please enter email and password", true); return; }
-            const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-            if (error) {
-                if (error.message.includes("Invalid login")) {
-                    const { data: signUpData, error: signUpError } = await supabaseClient.auth.signUp({ email, password });
-                    if (signUpError) { showMessage(signUpError.message, true); return; }
-                    showMessage("Account created! Check your email to confirm.", false);
-                    return;
-                }
-                showMessage(error.message, true);
-                return;
-            }
-            if (data.session) {
-                setCookie("sb-access-token", data.session.access_token);
-                redirectToDashboard();
-            }
-        }
-        supabaseClient.auth.onAuthStateChange((event, session) => {
-            if (event === "SIGNED_IN" && session) {
-                setCookie("sb-access-token", session.access_token);
-                redirectToDashboard();
-            }
-        });
-    </script>
-</body>
-</html>
-"""
-
 # ==================== 翻译字典 (i18n) ====================
 TRANSLATIONS = {
     "zh_tw": {
@@ -253,17 +52,6 @@ TRANSLATIONS = {
         "total_mv_label": "當前持倉總市值",
         "total_pnl_label": "🚨 全局持倉盈虧 (PnL)",
         "summary_label": "📊 Summary 時間鎖狀態",
-        "watchlist_title": "📋 自選股",
-        "target_alert_title": "🎯 目標價提醒",
-        "target_alert_hit": "達標!",
-        "target_alert_current": "現價",
-        "audit_title": "🧠 AI 投資組合分析報告",
-        "audit_loading": "AI 模型分析中...",
-        "audit_confirm": "這將使用你的 API Key。確定繼續？",
-        "capital_recover_hint": "(待收回",
-        "capital_recover_hint_end": "股)",
-        "capital_recovered_badge": "💵 已收回本金",
-        "capital_recovered_label": "已收回本金",
         "buy_title": "🟢 新增股票持倉",
         "buy_ticker_ph": "ASTS",
         "buy_price_ph": "價格",
@@ -560,124 +348,12 @@ def save_json_file(path, data):
             json.dump(data, f, indent=4, ensure_ascii=False)
         os.replace(tmp, path)
 
-def load_portfolio():
-    if CLOUD_MODE and g.get("user_id"):
-        try:
-            resp = supabase_admin.table("portfolios").select("*").eq("user_id", g.user_id).execute()
-            return [{"ticker": r["ticker"], "shares": r["shares"], "avg_price": r["avg_price"],
-                     "market": r.get("market", "US"), "date": r.get("buy_date", ""),
-                     "type": "BUY", "price": r["avg_price"], "commission": 0}
-                    for r in (resp.data or [])]
-        except Exception:
-            return []
-    return load_json_file(PORTFOLIO_JSON, [])
-
-def save_portfolio(data):
-    if CLOUD_MODE and g.get("user_id"):
-        try:
-            # Delete existing rows for this user that are not in new data
-            new_tickers = {d.get("ticker", "").upper() for d in data if d.get("type") == "BUY"}
-            existing = supabase_admin.table("portfolios").select("ticker").eq("user_id", g.user_id).execute()
-            for row in (existing.data or []):
-                if row["ticker"].upper() not in new_tickers:
-                    supabase_admin.table("portfolios").delete().eq("user_id", g.user_id).eq("ticker", row["ticker"]).execute()
-            # Aggregate BUY entries by ticker
-            agg = {}
-            for d in data:
-                if d.get("type") != "BUY":
-                    continue
-                tk = d["ticker"].upper()
-                if tk not in agg:
-                    agg[tk] = {"user_id": g.user_id, "ticker": tk,
-                               "shares": 0.0, "avg_price": 0.0, "market": d.get("market", "US"),
-                               "buy_date": d.get("date", "")}
-                idx = agg[tk]
-                shares = float(d.get("shares", 0))
-                price = float(d.get("price", 0))
-                total_spend = idx["shares"] * idx["avg_price"] + shares * price
-                idx["shares"] += shares
-                idx["avg_price"] = total_spend / idx["shares"] if idx["shares"] > 0 else 0.0
-            for row in agg.values():
-                supabase_admin.table("portfolios").upsert(row, on_conflict="user_id,ticker").execute()
-        except Exception:
-            pass
-        return
-    save_json_file(PORTFOLIO_JSON, data)
-
-def load_config():
-    if CLOUD_MODE and g.get("user_id"):
-        try:
-            resp = supabase_admin.table("profiles").select("*").eq("user_id", g.user_id).single().execute()
-            if resp.data:
-                return {k: v for k, v in resp.data.items() if k not in ("user_id", "tier", "pro_expiry", "created_at")}
-            else:
-                # Auto-create profile with defaults
-                default_profile = dict(DEFAULT_CONFIG)
-                default_profile["user_id"] = g.user_id
-                default_profile["tier"] = "free"
-                default_profile.setdefault("secondary_currency", "HKD")
-                supabase_admin.table("profiles").insert(default_profile).execute()
-                return default_profile
-        except Exception:
-            return dict(DEFAULT_CONFIG)
-    return load_json_file(CONFIG_JSON, DEFAULT_CONFIG)
-
-def save_config(data):
-    if CLOUD_MODE and g.get("user_id"):
-        try:
-            row = {k: v for k, v in data.items() if k in DEFAULT_CONFIG or k == "secondary_currency"}
-            row["user_id"] = g.user_id
-            supabase_admin.table("profiles").upsert(row, on_conflict="user_id").execute()
-        except Exception:
-            pass
-        return
-    save_json_file(CONFIG_JSON, data)
-
-def load_watchlist():
-    if CLOUD_MODE and g.get("user_id"):
-        try:
-            resp = supabase_admin.table("watchlist").select("*").eq("user_id", g.user_id).order("sort_order").execute()
-            cats = {}
-            targets = {}
-            for row in (resp.data or []):
-                cat = row.get("category", "Default")
-                tk = row["ticker"].upper()
-                cats.setdefault(cat, []).append(tk)
-                if row.get("target_price"):
-                    targets[tk] = float(row["target_price"])
-            return {"categories": cats, "targets": targets}
-        except Exception:
-            return {"categories": {}, "targets": {}}
-    return load_json_file(WATCHLIST_JSON, {"categories": {}})
-
-def save_watchlist(data):
-    if CLOUD_MODE and g.get("user_id"):
-        try:
-            # Delete all rows for user, then batch insert
-            supabase_admin.table("watchlist").delete().eq("user_id", g.user_id).execute()
-            rows = []
-            targets = data.get("targets", {})
-            sort = 0
-            for cat_name, tickers in data.get("categories", {}).items():
-                for tk in tickers:
-                    row = {"user_id": g.user_id, "category": cat_name,
-                           "ticker": tk.upper(), "sort_order": sort}
-                    if tk in targets:
-                        row["target_price"] = targets[tk]
-                    rows.append(row)
-                    sort += 1
-            if rows:
-                supabase_admin.table("watchlist").insert(rows).execute()
-        except Exception:
-            pass
-        return
-    save_json_file(WATCHLIST_JSON, data)
-
-def get_is_pro():
-    """Return pro status: selfhosted uses IS_PRO flag, cloud uses g.tier."""
-    if CLOUD_MODE:
-        return g.get("tier", "free") == "pro"
-    return IS_PRO
+def load_portfolio(): return load_json_file(PORTFOLIO_JSON, [])
+def save_portfolio(data): save_json_file(PORTFOLIO_JSON, data)
+def load_watchlist(): return load_json_file(WATCHLIST_JSON, {"categories": {}})
+def save_watchlist(data): save_json_file(WATCHLIST_JSON, data)
+def load_config(): return load_json_file(CONFIG_JSON, DEFAULT_CONFIG)
+def save_config(data): save_json_file(CONFIG_JSON, data)
 
 # ==================== 🎯 2. 數據抓取與工具 (yfinance) ====================
 ATR_CACHE = {}
@@ -987,68 +663,8 @@ def build_watchlist_html(t):
     return html
 
 # ==================== 🎯 4. 路由控制 ====================
-
-PUBLIC_PATHS = {"/", "/health", "/webhook", "/favicon.ico"}
-
-@app.before_request
-def cloud_auth():
-    if not CLOUD_MODE:
-        return
-    g.user_id = None
-    g.tier = "free"
-    g.user_email = ""
-
-    if request.path in PUBLIC_PATHS or request.path.startswith("/static"):
-        return
-
-    token = request.headers.get("Authorization", "").replace("Bearer ", "")
-    if not token:
-        token = request.cookies.get("sb-access-token")
-
-    if not token:
-        if request.path.startswith("/api/"):
-            abort(401, description=jsonify({"error": "Unauthorized"}).get_data(as_text=True))
-        return redirect("/")
-
-    try:
-        user_resp = supabase.auth.get_user(token)
-        g.user_id = user_resp.user.id
-        g.user_email = getattr(user_resp.user, "email", "")
-    except Exception as e:
-        err_msg = str(e).lower()
-        if "expired" in err_msg:
-            if request.path.startswith("/api/"):
-                abort(401, description=jsonify({"error": "Token expired"}).get_data(as_text=True))
-            return redirect("/")
-        if request.path.startswith("/api/"):
-            abort(401, description=jsonify({"error": "Invalid token"}).get_data(as_text=True))
-        return redirect("/")
-
-    try:
-        profile = supabase_admin.table("profiles").select("tier").eq("user_id", g.user_id).single().execute()
-        g.tier = profile.data.get("tier", "free") if profile.data else "free"
-    except Exception:
-        g.tier = "free"
-
 @app.route('/')
 def index():
-    if CLOUD_MODE:
-        # Return landing page for cloud mode (unauthenticated users)
-        if not g.get("user_id"):
-            try:
-                return render_template_string(LANDING_TEMPLATE,
-                    supabase_url=SUPABASE_URL, supabase_key=SUPABASE_KEY,
-                    version=VERSION)
-            except Exception as e:
-                import traceback
-                return f"<pre>Landing Error:\n{traceback.format_exc()}</pre>", 500
-        # Authenticated users go to dashboard
-        return redirect("/dashboard")
-
-    return redirect("/dashboard")
-
-@app.route('/dashboard')
-def dashboard():
     config = load_config()
     if "secondary_currency" not in config:
         config["secondary_currency"] = "HKD"
@@ -1061,100 +677,740 @@ def dashboard():
     total_pnl_usd = total_mv_usd - total_open_cost
     total_roi = (total_pnl_usd / total_open_cost) * 100 if total_open_cost > 0 else 0.0
     total_roi_str = f"{total_roi:+.2f}%"
-
+    
     date_str = datetime.now().strftime("%Y-%m-%d")
+    is_active = check_us_market_active_hours()
     markets_status = {k: is_market_open(k) for k in MARKETS}
-    is_pro = get_is_pro()
 
-    from flask import Response
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html lang="en" class="dark">
+    <head>
+        <meta charset="UTF-8">
+        <title>Pulse — Live Data · Real Intuition</title>
+        <link rel="icon" href="/pulse_logo.png" type="image/png">
+        <link rel="stylesheet" href="/pulse.css">
+        <style>
+            @keyframes pulse-alert { 0%, 100% { background-color: rgba(159, 18, 57, 0.2); } 50% { background-color: rgba(225, 29, 72, 0.5); } }
+            .danger-row { animation: pulse-alert 2s infinite; border-left: 4px solid #f43f5e; }
+            .watchlist-sidebar { position: fixed; top: 0; left: 0; width: 280px; height: 100vh; background: #0f172a; border-right: 1px solid rgba(255, 255, 255, 0.1); z-index: 1000; padding: 20px 15px; transform: translateX(-265px); transition: transform 0.3s; }
+            .watchlist-sidebar:hover { transform: translateX(0); }
+            .wl-cat-group.dragging { opacity: 0.4; }
+            .wl-cat-group.drag-over { border-top: 2px solid #34d399; }
+            .modal-bg { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(2, 6, 23, 0.75); backdrop-filter: blur(4px); z-index: 2000; align-items: center; justify-content: center; }
+            .modal-active { display: flex; }
+        </style>
+    </head>
+    <body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
 
-    # Load template from file (shared between selfhosted and cloud)
-    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates', 'dashboard.html'), 'r') as f:
-        dashboard_template = f.read()
+        <!-- Watchlist Sidebar -->
+        <div class="watchlist-sidebar">
+            <div class="flex justify-between items-center border-b border-slate-800 pb-2 mb-3">
+                <span class="text-xs font-black tracking-widest text-slate-200">{{ t.watchlist_title }}</span>
+                <button onclick="createNewCategory()" class="text-[10px] bg-slate-800 px-2 py-0.5 rounded hover:bg-slate-700 text-emerald-400 font-bold">{{ t.wl_add_cat }}</button>
+            </div>
+            <div id="watchlist-master-box" class="overflow-y-auto space-y-3" style="height: calc(100vh - 80px);">
+                {{ watchlist_html|safe }}
+            </div>
+        </div>
 
-    return render_template_string(dashboard_template,
-        t=t, stocks=stocks, open_tickers=open_tickers, ticker_market=ticker_market,
-        total_mv_usd=total_mv_usd, total_open_cost=total_open_cost, total_pnl_usd=total_pnl_usd,
-        total_roi_str=total_roi_str, usd_hkd=usd_hkd, sec_cur=sec_cur,
-        watchlist_html=watchlist_html, targets_json=targets_json,
-        markets_status=markets_status, active_markets=active_markets,
-        version=VERSION, changelog=CHANGELOG, today_date=date_str,
-        config=config, is_pro=is_pro,
+        <!-- ⚙️ 系統設定 -->
+        <div id="settingsModal" class="modal-bg">
+            <div class="bg-slate-900 border border-slate-800 p-8 rounded-2xl shadow-2xl w-full max-w-2xl border-l-4 border-l-cyan-500 m-4">
+                <div class="flex justify-between items-center border-b border-slate-800 pb-4 mb-6">
+                    <h3 class="text-lg font-black text-cyan-400 tracking-wide">{{ t.settings_title }} <span class="text-slate-600 text-xs font-mono ml-2">{{ version }}</span></h3>
+                    <button onclick="toggleSettingsModal()" class="text-slate-400 hover:text-slate-200 font-bold text-sm">{{ t.settings_close }}</button>
+                </div>
+
+                <!-- Tab buttons -->
+                <div class="flex gap-1 mb-6">
+                    <button type="button" id="tab-btn-general" onclick="switchSettingsTab('general')" class="px-4 py-1.5 text-xs font-bold rounded bg-cyan-600 text-slate-900">{{ t.settings_tab_general }}</button>
+                    <button type="button" id="tab-btn-ai" onclick="switchSettingsTab('ai')" class="px-4 py-1.5 text-xs font-bold rounded bg-slate-800 text-slate-400 hover:bg-slate-700">{{ t.settings_tab_ai }}</button>
+                </div>
+
+                <form action="/api/config/save" method="POST" class="space-y-4 text-xs">
+
+                    <!-- GENERAL TAB -->
+                    <div id="settings-tab-general" class="space-y-4">
+                        <div>
+                            <label class="block text-slate-400 font-bold mb-1" for="settings-language">{{ t.settings_language }}</label>
+                            <select name="language" id="settings-language" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-bold">
+                                <option value="zh_tw" {% if config.language == 'zh_tw' %}selected{% endif %}>繁體中文</option>
+                                <option value="zh_cn" {% if config.language == 'zh_cn' %}selected{% endif %}>簡體中文</option>
+                                <option value="en" {% if config.language == 'en' %}selected{% endif %}>English</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-slate-400 font-bold mb-1" for="settings-cash-balance">{{ t.settings_cash_balance }}</label>
+                            <input type="number" step="0.01" name="cash_balance" id="settings-cash-balance" value="{{ config.cash_balance }}" min="0" class="w-40 bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-mono">
+                        </div>
+                        <div>
+                            <label class="block text-slate-400 font-bold mb-1" for="settings-currency">{{ t.settings_currency }}</label>
+                            <select name="secondary_currency" id="settings-currency" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-bold">
+                                <option value="HKD" {% if config.secondary_currency == 'HKD' %}selected{% endif %}>HKD 港幣</option>
+                                <option value="CNY" {% if config.secondary_currency == 'CNY' %}selected{% endif %}>CNY 人民幣</option>
+                                <option value="TWD" {% if config.secondary_currency == 'TWD' %}selected{% endif %}>TWD 新台幣</option>
+                                <option value="JPY" {% if config.secondary_currency == 'JPY' %}selected{% endif %}>JPY 日圓</option>
+                                <option value="EUR" {% if config.secondary_currency == 'EUR' %}selected{% endif %}>EUR 歐元</option>
+                                <option value="GBP" {% if config.secondary_currency == 'GBP' %}selected{% endif %}>GBP 英鎊</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- AI TAB -->
+                    <div id="settings-tab-ai" class="hidden space-y-4">
+                        {% if is_pro %}
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-slate-400 font-bold mb-1" for="settings-ai-provider">{{ t.settings_ai_provider }}</label>
+                                <select name="ai_provider" id="settings-ai-provider" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-bold">
+                                    <option value="gemini" {% if config.ai_provider == 'gemini' %}selected{% endif %}>Google Gemini</option>
+                                    <option value="openai" {% if config.ai_provider == 'openai' %}selected{% endif %}>OpenAI API compatible</option>
+                                    <option value="deepseek" {% if config.ai_provider == 'deepseek' %}selected{% endif %}>DeepSeek (Official)</option>
+                                    <option disabled class="text-slate-600">── Local Inference ──</option>
+                                    <option value="ollama" {% if config.ai_provider == 'ollama' %}selected{% endif %}>🖥️ Ollama (Local)</option>
+                                    <option value="vllm" {% if config.ai_provider == 'vllm' %}selected{% endif %}>🖥️ vLLM (Local)</option>
+                                    <option value="lmstudio" {% if config.ai_provider == 'lmstudio' %}selected{% endif %}>🖥️ LM Studio (Local)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-slate-400 font-bold mb-1" for="settings-model">{{ t.settings_model }}</label>
+                                <input type="text" name="ai_model" id="settings-model" value="{{ config.ai_model }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-mono">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-slate-400 font-bold mb-1" for="settings-api-url">{{ t.settings_api_url }}</label>
+                            <input type="text" name="custom_api_url" id="settings-api-url" value="{{ config.custom_api_url }}" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-mono">
+                        </div>
+                        <div>
+                            <label class="block text-slate-400 font-bold mb-1" for="settings-api-key">{{ t.settings_api_key }}</label>
+                            <input type="password" name="api_key" id="settings-api-key" value="{{ config.api_key }}" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-mono">
+                        </div>
+                        <div>
+                            <label class="block text-slate-400 font-bold mb-1" for="settings-timeout">{{ t.settings_timeout }}</label>
+                            <input type="number" name="ai_timeout" id="settings-timeout" value="{{ config.ai_timeout }}" min="10" max="300" class="w-24 bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-mono text-center">
+                            <span class="text-slate-600 text-[10px] ml-2">{{ t.settings_timeout_hint }}</span>
+                        </div>
+                        <div>
+                            <label class="block text-slate-400 font-bold mb-1">{{ t.settings_prompt_mode }}</label>
+                            <div class="flex gap-4 mb-3">
+                                <label class="flex items-center gap-1.5 text-slate-300 cursor-pointer">
+                                    <input type="radio" name="prompt_mode" value="style" {% if config.prompt_mode != 'custom' %}checked{% endif %} class="accent-cyan-500">
+                                    <span class="text-xs">{{ t.prompt_mode_style }}</span>
+                                </label>
+                                <label class="flex items-center gap-1.5 text-slate-300 cursor-pointer">
+                                    <input type="radio" name="prompt_mode" value="custom" {% if config.prompt_mode == 'custom' %}checked{% endif %} class="accent-cyan-500">
+                                    <span class="text-xs">{{ t.prompt_mode_custom }}</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-slate-400 font-bold mb-1" for="settings-prompt-level">{{ t.settings_prompt_level }}</label>
+                            <select name="prompt_level" id="settings-prompt-level" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-bold">
+                                <option value="strict" {% if config.prompt_level == 'strict' %}selected{% endif %}>{{ t.prompt_level_strict }}</option>
+                                <option value="balanced" {% if config.prompt_level == 'balanced' %}selected{% endif %}>{{ t.prompt_level_balanced }}</option>
+                                <option value="relaxed" {% if config.prompt_level == 'relaxed' %}selected{% endif %}>{{ t.prompt_level_relaxed }}</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-slate-400 font-bold mb-1" for="settings-custom-prompt">{{ t.settings_custom_prompt }}</label>
+                            <textarea name="custom_prompt" id="settings-custom-prompt" rows="6" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-300 font-mono text-[11px]" placeholder="留空則使用預設 Prompt...">{{ config.custom_prompt }}</textarea>
+                            <p class="text-slate-600 text-[10px] mt-1">{{ t.settings_prompt_hint }}</p>
+                        </div>
+                        {% else %}
+                        <p class="text-slate-500 text-sm">AI 模型設定僅在 Pro 版本可用。</p>
+                        {% endif %}
+                    </div>
+
+                    <div class="border-t border-slate-800 pt-4 flex justify-end">
+                        <button type="submit" class="px-6 py-2 bg-cyan-600 hover:bg-cyan-500 font-black rounded text-slate-900 tracking-wider">{{ t.settings_save }}</button>
+                    </div>
+                </form>
+
+                <!-- 📋 更新日誌 -->
+                <div class="border-t border-slate-800 mt-4 pt-4">
+                    <p class="text-slate-500 text-[10px] font-bold uppercase mb-2">{{ t.changelog_title }}</p>
+                    <div class="space-y-1 max-h-32 overflow-y-auto">
+                        {% for ver, msg in changelog %}
+                        <div class="text-[10px]"><span class="text-cyan-400 font-mono">{{ ver }}</span> <span class="text-slate-500">{{ msg }}</span></div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="container mx-auto px-6 py-8 pl-12">
+            <!-- 頂部 Bar -->
+            <div class="flex justify-between items-center border-b border-slate-800 pb-6 mb-8">
+                <div class="flex items-center gap-4">
+                    <img src="/pulse_logo.png" alt="Pulse" class="w-10 h-10 rounded-lg">
+                    <div>
+                        <h1 class="text-3xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400">{{ t.title }}</h1>
+                        <p class="text-slate-400 text-sm mt-1">{{ t.subtitle }}
+                            <span class="ml-2 text-[10px] font-mono space-x-2">
+                                <span>US<span class="ml-0.5 inline-block w-1.5 h-1.5 rounded-full {% if markets_status.US %}bg-emerald-400{% else %}bg-rose-500{% endif %}"></span></span>
+                                <span>HK<span class="ml-0.5 inline-block w-1.5 h-1.5 rounded-full {% if markets_status.HK %}bg-emerald-400{% else %}bg-rose-500{% endif %}"></span></span>
+                                <span>CN<span class="ml-0.5 inline-block w-1.5 h-1.5 rounded-full {% if markets_status.CN %}bg-emerald-400{% else %}bg-rose-500{% endif %}"></span></span>
+                                <span>TW<span class="ml-0.5 inline-block w-1.5 h-1.5 rounded-full {% if markets_status.TW %}bg-emerald-400{% else %}bg-rose-500{% endif %}"></span></span>
+                                <span>TWO<span class="ml-0.5 inline-block w-1.5 h-1.5 rounded-full {% if markets_status.TWO %}bg-emerald-400{% else %}bg-rose-500{% endif %}"></span></span>
+                            </span>
+                        </p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <div class="bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 flex items-center gap-2 text-xs">
+                        <span class="text-slate-400 font-bold">{{ t.auto_refresh_label }}</span>
+                        <input type="number" id="refreshIntervalInput" name="refresh_interval" value="{{ config.refresh_interval }}" min="10" title="{{ t.refresh_tooltip }}" class="w-12 bg-slate-950 text-center text-emerald-400 font-mono rounded font-bold" onchange="updateLiveInterval(this.value)">
+                        <span id="refreshIndicator" class="h-2 w-2 rounded-full bg-emerald-500"></span>
+                    </div>
+                    {% if is_pro %}<button onclick="runAiAudit()" class="px-5 py-2.5 bg-gradient-to-r from-cyan-500 to-emerald-500 font-bold rounded-lg text-xs tracking-widest">{{ t.ai_report_btn }}</button>{% endif %}
+                    <button onclick="toggleSettingsModal()" class="p-2.5 bg-slate-900 border border-slate-800 rounded-lg text-slate-300">⚙️</button>
+                </div>
+            </div>
+
+            <!-- 三大數據卡片 -->
+            <div class="grid {% if is_pro %}grid-cols-3{% else %}grid-cols-2{% endif %} gap-6 mb-8">
+                <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl">
+                    <p class="text-slate-400 text-xs font-bold uppercase">{{ t.total_mv_label }} (USD / {{ sec_cur }})</p>
+                    <p id="top-total-mv-usd" class="text-3xl font-black text-cyan-400 mt-2">${{ "{:,.2f}".format(total_mv_usd) }}</p>
+                    <p id="top-total-mv-hkd" class="text-xs font-mono text-slate-500 mt-1">≈ {{ sec_cur }}${{ "{:,.2f}".format(total_mv_usd * usd_hkd) }}</p>
+                </div>
+                <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl">
+                    <p class="text-slate-400 text-xs font-bold uppercase">{{ t.total_pnl_label }} (USD / {{ sec_cur }})</p>
+                    <p id="top-total-pnl-usd" class="text-3xl font-black mt-2 {% if total_pnl_usd >= 0 %}text-emerald-400{% else %}text-rose-500{% endif %}">${{ "{:+,.2f}".format(total_pnl_usd) }} <span class="text-xl font-medium">({{ total_roi_str }})</span></p>
+                    <p id="top-total-pnl-hkd" class="text-xs font-mono mt-1 {% if total_pnl_usd >= 0 %}text-emerald-500/80{% else %}text-rose-500/80{% endif %}">≈ {{ sec_cur }}${{ "{:+,.2f}".format(total_pnl_usd * usd_hkd) }}</p>
+                </div>
+{% if is_pro %}
+                <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl">
+                    <p class="text-slate-400 text-xs font-bold uppercase mb-2">{{ t.target_alert_title }}</p>
+                    <div id="target-alerts" class="overflow-y-auto space-y-1 text-xs" style="max-height: 80px;">
+                        <p class="text-slate-600 italic">—</p>
+                    </div>
+                </div>
+{% endif %}
+            </div>
+
+            {% if is_pro %}
+            <!-- Pro: 市場分佈 + 現金比率 -->
+            <div class="grid grid-cols-2 gap-6 mb-8">
+                <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl">
+                    <p class="text-slate-400 text-xs font-bold uppercase mb-3">{{ t.card_market_dist }}</p>
+                    {% set ns = namespace(markets={}) %}
+                    {% for stock in stocks %}
+                        {% if stock.status == 'OPEN' and stock.current_mv_raw > 0 %}
+                            {% set _ = ns.markets.update({stock.market: ns.markets.get(stock.market, 0) + stock.current_mv_raw}) %}
+                        {% endif %}
+                    {% endfor %}
+                    {% for mkt, mv in ns.markets.items()|sort(attribute='1', reverse=True) %}
+                    <div class="flex justify-between items-center mb-1.5 text-sm">
+                        <span class="text-slate-300 font-bold">{{ mkt }}</span>
+                        <span class="text-slate-400 font-mono">${{ "{:,.0f}".format(mv) }}</span>
+                        <span class="text-cyan-400 font-mono text-xs">{{ "%.1f"|format(mv / total_mv_usd_raw * 100) if total_mv_usd_raw > 0 else 0 }}%</span>
+                    </div>
+                    <div class="w-full bg-slate-800 rounded-full h-1.5 mb-2">
+                        <div class="bg-cyan-500 h-1.5 rounded-full" style="width: {{ "%.0f"|format(mv / total_mv_usd_raw * 100) if total_mv_usd_raw > 0 else 0 }}%"></div>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl flex flex-col justify-center items-center">
+                    <p class="text-slate-400 text-xs font-bold uppercase mb-2">{{ t.card_cash_ratio }}</p>
+                    <p class="text-4xl font-black text-emerald-400">{{ "%.1f"|format(cash_balance / (total_mv_usd_raw + cash_balance) * 100) if (total_mv_usd_raw + cash_balance) > 0 else 0 }}%</p>
+                    <p class="text-slate-500 text-xs mt-1">${{ "{:,.0f}".format(cash_balance) }} / ${{ "{:,.0f}".format(total_mv_usd_raw + cash_balance) }}</p>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- 交易輸入表單 -->
+            <div class="grid grid-cols-2 gap-6 mb-8">
+                <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl border-l-4 border-l-emerald-500">
+                    <h3 class="text-md font-black text-emerald-400 mb-4">{{ t.buy_title }}</h3>
+                    <form id="buy-form" class="grid grid-cols-2 gap-3 text-xs" onsubmit="submitTrade(event, 'buy')">
+                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5" for="buy-ticker">{{ t.ticker_label }}</label><input type="text" name="ticker" id="buy-ticker" placeholder="{{ t.buy_ticker_ph }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2 font-mono uppercase"></div>
+                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5" for="buy-market">{{ t.market_label }}</label><select name="market" id="buy-market" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-bold"><option value="US">US</option><option value="HK">HK</option><option value="CN">CN</option><option value="TW">TW</option><option value="TWO">TWO</option></select></div>
+                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5" for="buy-date">{{ t.date_label }}</label><input type="date" name="buy_date" id="buy-date" value="{{ today_date }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
+                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5" for="buy-price">{{ t.price_label }}</label><input type="number" step="0.0001" name="buy_price" id="buy-price" placeholder="{{ t.buy_price_ph }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
+                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5" for="buy-shares">{{ t.shares_label }}</label><input type="number" name="buy_shares" id="buy-shares" placeholder="{{ t.buy_shares_ph }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
+                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5" for="buy-commission">{{ t.commission_label }}</label><input type="number" step="0.01" name="buy_commission" id="buy-commission" value="0.00" class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
+                        <button type="submit" class="col-span-2 py-2 bg-emerald-600 hover:bg-emerald-700 font-bold rounded">{{ t.buy_confirm }}</button>
+                        <div id="buy-estimated-cost" class="col-span-2 text-center text-xs font-mono text-emerald-300 mt-1">{{ t.buy_est_cost }}: $0.00</div>
+                    </form>
+                </div>
+                <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl border-l-4 border-l-rose-500">
+                    <h3 class="text-md font-black text-rose-400 mb-4">{{ t.sell_title }}</h3>
+                    <form id="sell-form" class="grid grid-cols-2 gap-3 text-xs" onsubmit="submitTrade(event, 'sell')">
+                        <div class="col-span-2"><label class="block text-slate-500 text-[10px] font-bold mb-0.5" for="sell-ticker">{{ t.sell_ticker_label }}</label><select name="ticker" id="sell-ticker" required class="w-full bg-slate-950 border border-slate-800 rounded p-2 font-bold"><option value="">{{ t.sell_select_ticker }}</option>{% set ns = namespace(current_market='') %}{% for tk in open_tickers %}{% set m = ticker_market.get(tk, 'US') %}{% if m != ns.current_market %}{% if ns.current_market != '' %}</optgroup>{% endif %}<optgroup label="{{ m }}">{% set ns.current_market = m %}{% endif %}<option value="{{ tk }}">{{ tk }}</option>{% endfor %}</optgroup></select></div>
+                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5" for="sell-date">{{ t.sell_date_label }}</label><input type="date" name="sell_date" id="sell-date" value="{{ today_date }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
+                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5" for="sell-price">{{ t.sell_price_label }}</label><input type="number" step="0.0001" name="sell_price" id="sell-price" placeholder="{{ t.sell_price_ph }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
+                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5" for="sell-shares">{{ t.sell_shares_label }}</label><input type="number" name="sell_shares" id="sell-shares" placeholder="{{ t.sell_shares_ph }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
+                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5" for="sell-commission">{{ t.sell_commission_label }}</label><input type="number" step="0.01" name="sell_commission" id="sell-commission" value="0.00" class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
+                        <button type="submit" class="col-span-2 py-2 bg-rose-600 hover:bg-rose-700 font-bold rounded">{{ t.sell_confirm }}</button>
+                        <div id="sell-estimated-cost" class="col-span-2 text-center text-xs font-mono text-rose-300 mt-1">{{ t.sell_est_income }}: $0.00</div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- 🌍 市場標籤 -->
+            <div id="market-tabs" class="flex gap-1 mb-3">
+                <button onclick="filterMarket('all')" class="market-tab px-3 py-1 text-xs font-bold rounded bg-cyan-600 text-slate-900" data-market="all">{{ t.tab_all }}</button>
+                {% if "US" in active_markets %}<button onclick="filterMarket('US')" class="market-tab px-3 py-1 text-xs font-bold rounded bg-slate-800 text-slate-400 hover:bg-slate-700" data-market="US">US</button>{% endif %}
+                {% if "HK" in active_markets %}<button onclick="filterMarket('HK')" class="market-tab px-3 py-1 text-xs font-bold rounded bg-slate-800 text-slate-400 hover:bg-slate-700" data-market="HK">HK</button>{% endif %}
+                {% if "CN" in active_markets %}<button onclick="filterMarket('CN')" class="market-tab px-3 py-1 text-xs font-bold rounded bg-slate-800 text-slate-400 hover:bg-slate-700" data-market="CN">CN</button>{% endif %}
+                {% if "TW" in active_markets %}<button onclick="filterMarket('TW')" class="market-tab px-3 py-1 text-xs font-bold rounded bg-slate-800 text-slate-400 hover:bg-slate-700" data-market="TW">TW</button>{% endif %}
+                {% if "TWO" in active_markets %}<button onclick="filterMarket('TWO')" class="market-tab px-3 py-1 text-xs font-bold rounded bg-slate-800 text-slate-400 hover:bg-slate-700" data-market="TWO">TWO</button>{% endif %}
+            </div>
+
+            <!-- 持倉與明細整合表格 -->
+            <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl mb-8">
+                <table class="w-full text-left border-collapse text-xs">
+                    <thead>
+                        <tr class="bg-slate-950/60 text-slate-400 border-b border-slate-800 uppercase tracking-wider">
+                            <th class="px-6 py-4 w-12 text-center">{{ t.table_expand }}</th>
+                            <th class="px-4 py-4">{{ t.table_ticker }}</th>
+                            <th class="px-4 py-4">{{ t.table_shares }}</th>
+                            <th class="px-4 py-4">{{ t.table_avg_price }}</th>
+                            <th class="px-4 py-4">{{ t.table_current_price }}</th>
+                            <th class="px-4 py-4">{{ t.table_stop_loss }}</th>
+                            <th class="px-4 py-4">{{ t.table_mv }}</th>
+                            <th class="px-6 py-4 text-right">{{ t.table_pnl }}</th>
+                            {% if is_pro %}<th class="px-4 py-4 text-right">{{ t.table_weight }}</th>{% endif %}
+                        </tr>
+                    </thead>
+                    
+                    {% for stock in stocks %}
+                    <!-- 🌟 股票核心資料列 -->
+                    <tbody class="border-b border-slate-800/80" data-market="{{ stock.market }}">
+                        <tr class="hover:bg-slate-800/30 cursor-pointer transition-colors {% if stock.is_danger %}danger-row{% endif %}" onclick="toggleHistory('details-{{ stock.ticker }}')">
+                            <td class="px-6 py-4 text-center text-cyan-400 font-bold select-none text-sm">▶</td>
+                            <td class="px-4 py-4 font-black text-slate-100 text-sm">${{ stock.ticker }}
+                                <span id="badge-recovered-{{ stock.ticker }}" class="text-[10px] px-1.5 py-0.5 font-black rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 ml-1 {% if not stock.capital_recovered %}hidden{% endif %}">{{ t.capital_recovered_badge }}</span>
+                            </td>
+                            <td class="px-4 py-4 font-mono text-slate-300">{{ stock.total_shares }}</td>
+                            <td class="px-4 py-4 font-mono text-slate-300">${{ stock.avg_buy_price }}</td>
+                            <td id="price-{{ stock.ticker }}" class="px-4 py-4 font-mono">
+                                <div class="font-bold text-cyan-400">${{ stock.current_price }}</div>
+                                <div class="{% if stock.day_change >= 0 %}text-emerald-400{% else %}text-rose-500{% endif %}">
+                                    {{ "▲ +" if stock.day_change >= 0 else "▼ " }}{{ "%.2f"|format(stock.day_change_pct) }}%
+                                </div>
+                            </td>
+                            <td class="px-4 py-4 font-mono text-slate-400">
+                                {% if stock.status == 'OPEN' %} <div class="text-rose-400 font-bold">${{ "%.2f"|format(stock.stop_loss) }}</div> {% else %} - {% endif %}
+                            </td>
+                            <td id="mv-{{ stock.ticker }}" class="px-4 py-4 font-mono font-bold">${{ stock.current_mv }}</td>
+                            <td id="pnl-{{ stock.ticker }}" class="px-6 py-4 text-right font-mono font-bold {% if stock.praw >= 0 %}text-emerald-400{% else %}text-rose-500{% endif %}">
+                                {{ stock.pnl_usd_str }} ({{ stock.roi_str }})
+                            </td>
+                            {% if is_pro %}
+                            <td class="px-4 py-4 text-right font-mono text-slate-400 text-sm">
+                                {{ "%.1f"|format(stock.current_mv_raw / total_mv_usd_raw * 100) if total_mv_usd_raw > 0 and stock.current_mv_raw > 0 else "-" }}%
+                            </td>
+                            {% endif %}
+                        </tr>
+                        
+                        <!-- 💡 本金收回提示 -->
+                        <tr id="recover-hint-{{ stock.ticker }}" class="{% if stock.capital_recovered or stock.status == 'CLOSED' %}hidden{% endif %}">
+                            {% if is_pro %}<td colspan="9" class="px-4 py-1 text-[11px] text-amber-500/80 font-medium tracking-wide">{% else %}<td colspan="8" class="px-4 py-1 text-[11px] text-amber-500/80 font-medium tracking-wide">{% endif %}
+                                {{ t.capital_recover_hint }} <span id="recover-shares-{{ stock.ticker }}" class="font-bold underline">{{ stock.shares_to_sell_to_recover }}</span> {{ t.capital_recover_hint_end }}
+                            </td>
+                        </tr>
+                        <!-- 🌟 內嵌式歷史交易明細 (該股票專屬) -->
+                        <tr id="details-{{ stock.ticker }}" class="hidden bg-slate-950/40">
+                            {% if is_pro %}<td colspan="9" class="px-8 py-4">{% else %}<td colspan="8" class="px-8 py-4">{% endif %}
+                                <div class="border-l-2 border-slate-700 pl-4 py-2">
+                                    <div class="text-slate-400 font-bold mb-2 uppercase font-mono tracking-wider text-[11px]">{{ t.history_title }} — ${{ stock.ticker }} | {{ t.capital_recovered_label }}: ${{ stock.capital_recovered_str }}</div>
+                                    <table class="w-full text-left font-mono text-[11px] text-slate-400">
+                                        <thead>
+                                            <tr class="text-slate-500 border-b border-slate-800">
+                                                <th class="py-1">{{ t.history_type }}</th>
+                                                <th class="py-1">{{ t.history_date }}</th>
+                                                <th class="py-1">{{ t.history_price }}</th>
+                                                <th class="py-1">{{ t.history_shares }}</th>
+                                                <th class="py-1">{{ t.history_commission }}</th>
+                                                <th class="py-1 text-right">{{ t.history_action }}</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-slate-900">
+                                            {% for tx in stock.history_txs %}
+                                            <tr class="hover:bg-slate-900/60">
+                                                <td class="py-2 font-bold {% if tx.type == 'BUY' %}text-emerald-400/90{% else %}text-rose-500/90{% endif %}">{{ tx.type }}</td>
+                                                <td class="py-2 text-slate-300">{{ tx.date }}</td>
+                                                <td class="py-2 text-slate-300">${{ tx.price }}</td>
+                                                <td class="py-2 text-slate-300">{{ tx.shares }}</td>
+                                                <td class="py-2">${{ tx.commission }}</td>
+                                                <td class="py-2 text-right">
+                                                    <button onclick="deleteHistoryEntry({{ tx.original_index }})" class="text-rose-500 hover:text-rose-400 font-bold">{{ t.history_delete }}</button>
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                    {% endfor %}
+                </table>
+            </div>
+
+            <!-- AI 審計區塊（已移至 Modal） -->
+            <div id="auditModal" class="modal-bg">
+                <div class="bg-slate-900 border border-slate-800 p-8 rounded-2xl shadow-2xl w-full max-w-4xl border-l-4 border-l-emerald-500 m-4" style="max-height: 85vh; display: flex; flex-direction: column;">
+                    <div class="flex justify-between items-center border-b border-slate-800 pb-4 mb-6 flex-shrink-0">
+                        <h3 class="text-lg font-black text-emerald-400 tracking-wide">{{ t.audit_title }} <span class="text-slate-600 text-xs font-mono ml-2">{{ config.ai_model }}</span></h3>
+                        <button onclick="closeAuditModal()" class="text-slate-400 hover:text-slate-200 font-bold text-sm">{{ t.settings_close }}</button>
+                    </div>
+                    <div id="auditResult" class="text-slate-300 text-sm whitespace-pre-wrap font-sans leading-relaxed overflow-y-auto flex-1"></div>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            // 🌐 i18n for JS
+            window.__t = { target_alert_hit: "{{ t.target_alert_hit }}", target_alert_current: "{{ t.target_alert_current }}" };
+            // 🎯 Targets data for client-side checking (no extra API calls)
+{% if is_pro %}
+            window.__targets = {{ targets_json|tojson }};
+{% endif %}
+            // 點擊股票列，切換展開與折疊明細
+            function toggleHistory(id) {
+                const el = document.getElementById(id);
+                // Find the main row (first tr in the same tbody)
+                const tbody = el.closest('tbody');
+                const mainRow = tbody.querySelector('tr');
+                const arrowTd = mainRow.querySelector('td');
+                if (el.classList.contains('hidden')) {
+                    el.classList.remove('hidden');
+                    arrowTd.innerText = "▼";
+                } else {
+                    el.classList.add('hidden');
+                    arrowTd.innerText = "▶";
+                }
+            }
+
+            function toggleSettingsModal() { document.getElementById('settingsModal').classList.toggle('modal-active'); }
+
+            // 🔀 Settings tab switching
+            function switchSettingsTab(tab) {
+                document.getElementById('settings-tab-general').classList.toggle('hidden', tab !== 'general');
+                document.getElementById('settings-tab-ai').classList.toggle('hidden', tab !== 'ai');
+                var gb = document.getElementById('tab-btn-general');
+                var ab = document.getElementById('tab-btn-ai');
+                if (tab === 'general') {
+                    gb.className = 'px-4 py-1.5 text-xs font-bold rounded bg-cyan-600 text-slate-900';
+                    ab.className = 'px-4 py-1.5 text-xs font-bold rounded bg-slate-800 text-slate-400 hover:bg-slate-700';
+                } else {
+                    ab.className = 'px-4 py-1.5 text-xs font-bold rounded bg-cyan-600 text-slate-900';
+                    gb.className = 'px-4 py-1.5 text-xs font-bold rounded bg-slate-800 text-slate-400 hover:bg-slate-700';
+                }
+            }
+
+            // 🤖 AI Provider presets — auto-fill URL & model
+            const AI_PRESETS = {
+                'gemini':   { url: 'https://generativelanguage.googleapis.com/v1beta/models/', model: 'gemini-2.5-flash' },
+                'openai':   { url: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+                'deepseek': { url: 'https://api.deepseek.com/v1', model: 'deepseek-v4-flash' },
+                'ollama':   { url: 'http://localhost:11434/v1', model: 'qwen2.5:7b' },
+                'vllm':     { url: 'http://localhost:8000/v1', model: '' },
+                'lmstudio': { url: 'http://localhost:1234/v1', model: '' },
+            };
+            (function() {
+                var sel = document.getElementById('settings-ai-provider');
+                if (sel) sel.addEventListener('change', function() {
+                    var p = AI_PRESETS[this.value];
+                    if (p) {
+                        document.getElementById('settings-api-url').value = p.url;
+                        if (p.model) document.getElementById('settings-model').value = p.model;
+                    }
+                });
+            })();
+
+            // 🌍 市場篩選（隱藏整個 tbody）
+            function filterMarket(market) {
+                sessionStorage.setItem('activeMarket', market);
+                document.querySelectorAll('.market-tab').forEach(btn => {
+                    btn.className = (btn.dataset.market === market)
+                        ? 'market-tab px-3 py-1 text-xs font-bold rounded bg-cyan-600 text-slate-900'
+                        : 'market-tab px-3 py-1 text-xs font-bold rounded bg-slate-800 text-slate-400 hover:bg-slate-700';
+                });
+                document.querySelectorAll('tbody[data-market]').forEach(tb => {
+                    tb.style.display = (market === 'all' || tb.dataset.market === market) ? '' : 'none';
+                });
+            }
+            // Restore market tab on load
+            const savedMarket = sessionStorage.getItem('activeMarket') || 'all';
+            filterMarket(savedMarket);
+
+            let updateTimer = null;
+            function startHighFrequencyUpdater() {
+                const intervalSec = parseInt(document.getElementById('refreshIntervalInput').value) || 5;
+                if (updateTimer) clearInterval(updateTimer);
+                updateTimer = setInterval(() => {
+                    const indicator = document.getElementById('refreshIndicator');
+                    indicator.classList.replace('bg-emerald-500', 'bg-cyan-400');
+                    fetch('/api/portfolio/realtime_feed')
+                        .then(res => res.json())
+                        .then(data => {
+                            setTimeout(() => { indicator.classList.replace('bg-cyan-400', 'bg-emerald-500'); }, 200);
+{% if is_pro %}
+                            checkTargetAlerts();
+{% endif %}                            if (!data.market_active) return;
+                            document.getElementById('top-total-mv-usd').innerText = '$' + data.total_mv_usd_str;
+                            document.getElementById('top-total-mv-hkd').innerText = '≈ ' + data.sec_cur + '$' + data.total_mv_sec_str;
+                        }).catch(() => {});
+                }, intervalSec * 1000);
+            }
+
+            function updateLiveInterval(val) {
+                fetch('/api/config/update_interval', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refresh_interval: parseInt(val) })
+                }).then(() => { startHighFrequencyUpdater(); });
+            }
+{% if is_pro %}
+
+            function runAiAudit() {
+                const modal = document.getElementById('auditModal');
+                const result = document.getElementById('auditResult');
+                modal.classList.add('modal-active');
+                var provider = document.getElementById('settings-ai-provider');
+                var isLocal = provider && ['ollama','vllm','lmstudio'].includes(provider.value);
+                if (!isLocal && !confirm('{{ t.audit_confirm }}')) {
+                    modal.classList.remove('modal-active');
+                    return;
+                }
+                result.textContent = '{{ t.audit_loading }}';
+                fetch('/api/ai_audit', { method: 'POST' }).then(res => res.json()).then(data => {
+                    if (data.success) {
+                        result.textContent = data.report;
+                    } else {
+                        result.textContent = '[Error] ' + data.error;
+                    }
+                }).catch(err => {
+                    result.textContent = '[Error] ' + err.message;
+                });
+            }
+
+            function closeAuditModal() {
+                document.getElementById('auditModal').classList.remove('modal-active');
+            }
+
+            // Click outside modal to close
+            document.getElementById('auditModal').addEventListener('click', function(e) {
+                if (e.target === this) closeAuditModal();
+            });
+
+            // 🧮 預計成本/收入即時計算
+            {% endif %}
+            function attachCostCalculator(formSelector, inputsSelector, resultId, label, sign) {
+                const form = document.querySelector(formSelector);
+                if (!form) return;
+                const inputs = form.querySelectorAll(inputsSelector);
+                const resultEl = document.getElementById(resultId);
+                const calc = () => {
+                    let price = parseFloat(inputs[0]?.value) || 0;
+                    let shares = parseFloat(inputs[1]?.value) || 0;
+                    let commission = parseFloat(inputs[2]?.value) || 0;
+                    let total = (price * shares) + (sign * commission);
+                    resultEl.innerText = label + ': $' + total.toFixed(2);
+                };
+                inputs.forEach(el => el.addEventListener('input', calc));
+            }
+
+            // 📋 Watchlist Management
+            function createNewCategory() {
+                const name = prompt('{{ t.wl_new_cat_prompt }}');
+                if (!name || !name.trim()) return;
+                fetch('/api/wl/add_category', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name: name.trim()}) })
+                .then(r => r.json()).then(d => { if (d.success) location.reload(); else alert(d.error); });
+            }
+            function deleteCategory(name) {
+                if (!confirm('{{ t.wl_delete_cat }}: ' + name + '?')) return;
+                fetch('/api/wl/delete_category', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name: name}) })
+                .then(r => r.json()).then(d => { if (d.success) location.reload(); });
+            }
+            function renameCategory(oldName, newName) {
+                if (!newName.trim() || newName.trim() === oldName) return;
+                fetch('/api/wl/rename_category', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({old_name: oldName, new_name: newName.trim()}) })
+                .then(r => r.json()).then(d => { if (d.success) location.reload(); });
+            }
+            function addTickerToCategory(catName, el) {
+                const input = el.tagName === 'INPUT' ? el : el.previousElementSibling;
+                const ticker = input.value.trim().toUpperCase();
+                if (!ticker) return;
+                fetch('/api/wl/add_ticker', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({category: catName, ticker: ticker}) })
+                .then(r => r.json()).then(d => { if (d.success) location.reload(); });
+            }
+            function deleteTickerFromCategory(catName, ticker) {
+                fetch('/api/wl/delete_ticker', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({category: catName, ticker: ticker}) })
+                .then(r => r.json()).then(d => { if (d.success) location.reload(); });
+            }
+{% if is_pro %}
+            // 🎯 Target Price Management
+            function setTarget(ticker) {
+                const price = prompt(ticker + ' 目標價 (USD)');
+                if (!price || isNaN(price)) return;
+                const p = parseFloat(price);
+                fetch('/api/wl/set_target', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ticker: ticker, price: p}) })
+                .then(r => r.json()).then(d => {
+                    if (d.success) {
+                        updateTargetBtn(ticker, p);
+                        window.__targets[ticker] = p;
+                        checkTargetAlerts();
+                    }
+                });
+            }
+            function deleteTarget(ticker) {
+                if (!confirm('刪除 ' + ticker + ' 的目標價？')) return;
+                fetch('/api/wl/delete_target', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ticker: ticker}) })
+                .then(r => r.json()).then(d => {
+                    if (d.success) {
+                        updateTargetBtn(ticker, null);
+                        delete window.__targets[ticker];
+                        checkTargetAlerts();
+                    }
+                });
+            }
+            function updateTargetBtn(ticker, targetPrice) {
+                const span = document.getElementById('wl-target-' + ticker);
+                if (!span) return;
+                span.innerHTML = '';
+                const btn = document.createElement('button');
+                btn.className = 'text-[9px] font-mono';
+                if (targetPrice !== null) {
+                    btn.className += ' text-amber-400 hover:text-rose-400';
+                    btn.title = '刪除目標價';
+                    btn.textContent = '🎯$' + targetPrice.toFixed(2) + ' ✕';
+                    btn.onclick = function() { deleteTarget(ticker); };
+                } else {
+                    btn.className += ' text-slate-600 hover:text-amber-400';
+                    btn.title = '🎯';
+                    btn.textContent = '🎯';
+                    btn.onclick = function() { setTarget(ticker); };
+                }
+                span.appendChild(btn);
+            }
+            function checkTargetAlerts(data) {
+                // Reads prices from watchlist DOM (instant, no API call)
+                const alertsDiv = document.getElementById('target-alerts');
+                if (!alertsDiv) return;
+                const targets = window.__targets || {};
+                const reached = [];
+                for (const [tk, target] of Object.entries(targets)) {
+                    const priceEl = document.getElementById('wl-price-' + tk);
+                    if (!priceEl) continue;
+                    const price = parseFloat(priceEl.textContent.replace('$', ''));
+                    if (price > 0 && price <= target) {
+                        reached.push({ticker: tk, price: price, target: target});
+                    }
+                }
+                if (reached.length === 0) {
+                    alertsDiv.innerHTML = '<p class="text-slate-600 italic">—</p>';
+                } else {
+                    alertsDiv.innerHTML = reached.map(r =>
+                        '<div class="text-rose-400 font-mono">🎯 ' + r.ticker +
+                        ' ' + window.__t.target_alert_hit + ' $' + r.target.toFixed(2) +
+                        ' <span class="text-slate-500">(' + window.__t.target_alert_current + ' $' + r.price.toFixed(2) + ')</span></div>'
+                    ).join('');
+                }
+            }
+{% endif %}
+
+            // 🔄 Drag & Drop: Watchlist Category Reordering
+            let draggedCat = null;
+            function handleDragStart(e) {
+                const header = e.currentTarget;
+                const el = header.closest('.wl-cat-group');
+                if (!el) return;
+                draggedCat = el;
+                el.classList.add('dragging');
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', el.dataset.cat);
+            }
+            function handleDragOver(e) {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                return false;
+            }
+            function handleDragEnter(e) {
+                const el = e.currentTarget;
+                if (el !== draggedCat) {
+                    el.classList.add('drag-over');
+                }
+            }
+            function handleDragLeave(e) {
+                e.currentTarget.classList.remove('drag-over');
+            }
+            function handleDragEnd(e) {
+                const el = e.currentTarget;
+                el.classList.remove('dragging');
+                document.querySelectorAll('.wl-cat-group').forEach(el2 => el2.classList.remove('drag-over'));
+                draggedCat = null;
+            }
+            function handleDrop(e) {
+                e.stopPropagation();
+                e.preventDefault();
+                const el = e.currentTarget;
+                if (!draggedCat || draggedCat === el) return;
+                // Swap positions in DOM
+                const parent = el.parentNode;
+                const all = [...parent.querySelectorAll('.wl-cat-group')];
+                const fromIdx = all.indexOf(draggedCat);
+                const toIdx = all.indexOf(el);
+                if (fromIdx < toIdx) {
+                    parent.insertBefore(draggedCat, el.nextSibling);
+                } else {
+                    parent.insertBefore(draggedCat, el);
+                }
+                // Persist new order
+                const newOrder = [...parent.querySelectorAll('.wl-cat-group')].map(el2 => el2.dataset.cat);
+                fetch('/api/wl/reorder_categories', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({order: newOrder})
+                }).then(r => r.json()).then(d => {
+                    if (!d.success) console.error('Reorder failed:', d.error);
+                });
+                el.classList.remove('drag-over');
+            }
+            // Attach dragenter/dragleave to all cat groups after DOM ready
+            document.addEventListener('DOMContentLoaded', function() {
+                document.querySelectorAll('.wl-cat-group').forEach(el => {
+                    el.addEventListener('dragenter', handleDragEnter);
+                    el.addEventListener('dragleave', handleDragLeave);
+                });
+            });
+
+            window.onload = function() {
+                startHighFrequencyUpdater();
+                attachCostCalculator('#buy-form', 'input[type="number"]', 'buy-estimated-cost', '預計成本', 1);
+                attachCostCalculator('#sell-form', 'input[type="number"]', 'sell-estimated-cost', '預計收入', -1);
+            };
+
+            // 🔄 AJAX trade submission + history delete
+            function submitTrade(e, type) {
+                e.preventDefault();
+                const form = e.target;
+                const btn = form.querySelector('button[type="submit"]');
+                const origText = btn.textContent;
+                btn.textContent = '...';
+                btn.disabled = true;
+                const data = new FormData(form);
+                fetch('/api/portfolio/' + type, { method: 'POST', body: data })
+                .then(r => { location.reload(); })
+                .catch(() => { btn.textContent = origText; btn.disabled = false; });
+            }
+            function deleteHistoryEntry(index) {
+                if (!confirm('確認刪除此交易？')) return;
+                fetch('/delete/' + index, { method: 'POST' })
+                .then(r => { location.reload(); })
+                .catch(() => {});
+            }
+        </script>
+    </body>
+    </html>
+    """, t=t, stocks=stocks, open_tickers=open_tickers, ticker_market=ticker_market, total_mv_usd=total_mv_usd, total_open_cost=total_open_cost, total_pnl_usd=total_pnl_usd, total_roi_str=total_roi_str, usd_hkd=usd_hkd, sec_cur=sec_cur, watchlist_html=watchlist_html, targets_json=targets_json, markets_status=markets_status, active_markets=active_markets, version=VERSION, changelog=CHANGELOG, today_date=date_str, config=config, is_pro=IS_PRO,
         total_mv_usd_raw=total_mv_usd, total_open_cost_raw=total_open_cost,
-        cash_balance=config.get("cash_balance", 0),
-        CLOUD_MODE=CLOUD_MODE,
-        supabase_url=SUPABASE_URL if CLOUD_MODE else "",
-        supabase_key=SUPABASE_KEY if CLOUD_MODE else "",
-        user_email=g.get("user_email", "") if CLOUD_MODE else "")
-
-@app.route('/health')
-def health():
-    if CLOUD_MODE:
-        return jsonify({"status": "ok", "cache_size": len(PRICE_CACHE)})
-    return jsonify({"status": "ok"})
-
-if CLOUD_MODE:
-    @app.route('/api/checkout')
-    def api_checkout():
-        if not g.get("user_id"):
-            return jsonify({"error": "Unauthorized"}), 401
-        try:
-            session = stripe.checkout.Session.create(
-                payment_method_types=["card"],
-                line_items=[{"price": STRIPE_PRICE_ID, "quantity": 1}],
-                mode="subscription",
-                success_url=request.host_url.rstrip("/") + "/dashboard?upgrade=success",
-                cancel_url=request.host_url.rstrip("/") + "/dashboard?upgrade=cancelled",
-                client_reference_id=g.user_id,
-            )
-            return jsonify({"url": session.url})
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-    @app.route('/webhook', methods=['POST'])
-    def stripe_webhook():
-        payload = request.get_data(as_text=True)
-        sig_header = request.headers.get("Stripe-Signature")
-        try:
-            event = stripe.Webhook.construct_event(payload, sig_header, STRIPE_WEBHOOK_SECRET)
-        except Exception:
-            return jsonify({"error": "Invalid signature"}), 400
-        if event["type"] == "checkout.session.completed":
-            session = event["data"]["object"]
-            user_id = session.get("client_reference_id")
-            if user_id:
-                try:
-                    supabase_admin.table("profiles").upsert(
-                        {"user_id": user_id, "tier": "pro"}, on_conflict="user_id"
-                    ).execute()
-                except Exception:
-                    pass
-        return jsonify({"status": "ok"})
-
-    @app.route('/api/profile', methods=['GET'])
-    def api_profile():
-        if not g.get("user_id"):
-            return jsonify({"error": "Unauthorized"}), 401
-        return jsonify({"user_id": g.user_id, "email": g.user_email, "tier": g.tier})
-
-    @app.route('/api/usage', methods=['GET'])
-    def api_usage():
-        if not CLOUD_MODE:
-            return jsonify({"daily_limit": FREE_DAILY_LIMIT, "used": 0, "remaining": 999999})
-        if not g.get("user_id"):
-            return jsonify({"error": "Unauthorized"}), 401
-        today = datetime.now(ZoneInfo("UTC")).strftime("%Y-%m-%d")
-        try:
-            resp = supabase_admin.table("usage_logs").select("id", count="exact") \
-                .eq("user_id", g.user_id).gte("created_at", today).execute()
-            used = resp.count or 0
-        except Exception:
-            used = 0
-        return jsonify({
-            "daily_limit": FREE_DAILY_LIMIT,
-            "used": used,
-            "remaining": max(0, FREE_DAILY_LIMIT - used)
-        })
+        cash_balance=config.get("cash_balance", 0))
 
 # ==================== 🎯 5. Watchlist 管理 API ====================
 @app.route('/api/wl/add_category', methods=['POST'])
@@ -1239,7 +1495,7 @@ def api_wl_reorder_categories():
 
 @app.route('/api/wl/set_target', methods=['POST'])
 def api_wl_set_target():
-    if not get_is_pro(): return jsonify({'error': 'Pro feature'}), 403
+    if not IS_PRO: return jsonify({'error': 'Pro feature'}), 403
     data = request.get_json()
     ticker = data.get('ticker', '').strip().upper()
     price = data.get('price')
@@ -1256,7 +1512,7 @@ def api_wl_set_target():
 
 @app.route('/api/wl/delete_target', methods=['POST'])
 def api_wl_delete_target():
-    if not get_is_pro(): return jsonify({'error': 'Pro feature'}), 403
+    if not IS_PRO: return jsonify({'error': 'Pro feature'}), 403
     data = request.get_json()
     ticker = data.get('ticker', '').strip().upper()
     wl = load_watchlist()
@@ -1268,7 +1524,7 @@ def api_wl_delete_target():
 
 @app.route('/api/wl/targets', methods=['GET'])
 def api_wl_targets():
-    if not get_is_pro(): return jsonify({'error': 'Pro feature'}), 403
+    if not IS_PRO: return jsonify({'error': 'Pro feature'}), 403
     wl = load_watchlist()
     targets = wl.get('targets', {})
     # Return targets with current prices
@@ -1291,11 +1547,12 @@ def delete_entry(index):
 @app.route('/api/config/save', methods=['POST'])
 def api_save_config():
     config = load_config()
-    if get_is_pro():
+    if IS_PRO:
         config["api_key"] = request.form.get("api_key", "").strip()
         config["ai_provider"] = request.form.get("ai_provider", "gemini")
         config["ai_model"] = request.form.get("ai_model", "").strip()
         config["custom_api_url"] = request.form.get("custom_api_url", "").strip()
+    if IS_PRO:
         config["ai_timeout"] = int(request.form.get("ai_timeout", "60"))
         config["prompt_level"] = request.form.get("prompt_level", "balanced")
         config["custom_prompt"] = request.form.get("custom_prompt", "").strip()
@@ -1315,7 +1572,7 @@ def api_update_interval():
 
 @app.route('/api/ai_audit', methods=['POST'])
 def api_ai_audit():
-    if not get_is_pro(): return jsonify({'error': 'Pro feature'}), 403
+    if not IS_PRO: return jsonify({'error': 'Pro feature'}), 403
     config = load_config()
     api_key = config.get("api_key", "")
     provider = config.get("ai_provider", "gemini")
@@ -1453,28 +1710,6 @@ def pulse_logo():
 @app.route('/pulse.css')
 def pulse_css():
     return send_from_directory(BASE_DIR, 'pulse.css')
-
-# ==================== Cloud Background Poller ====================
-if CLOUD_MODE:
-    from pulse_core.yfinance_client import start_background_poller
-
-    def _get_all_user_tickers():
-        tickers = set()
-        try:
-            pf = supabase_admin.table("portfolios").select("ticker").execute()
-            for r in (pf.data or []):
-                tickers.add(r["ticker"].upper())
-        except Exception:
-            pass
-        try:
-            wl = supabase_admin.table("watchlist").select("ticker").execute()
-            for r in (wl.data or []):
-                tickers.add(r["ticker"].upper())
-        except Exception:
-            pass
-        return tickers
-
-    start_background_poller(_get_all_user_tickers, interval=60)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
