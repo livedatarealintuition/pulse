@@ -554,7 +554,7 @@ def load_portfolio():
         try:
             resp = supabase_admin.table("portfolios").select("*").eq("user_id", g.user_id).execute()
             return [{"ticker": r["ticker"], "shares": r["shares"], "avg_price": r["avg_price"],
-                     "market": r.get("market", "US"), "buy_date": r.get("buy_date", ""),
+                     "market": r.get("market", "US"), "date": r.get("buy_date", ""),
                      "type": "BUY", "price": r["avg_price"], "commission": 0}
                     for r in (resp.data or [])]
         except Exception:
