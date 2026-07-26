@@ -4,7 +4,12 @@
         <meta charset="UTF-8">
         <title>Pulse — Live Data · Real Intuition</title>
         <link rel="icon" href="/pulse_logo.png" type="image/png">
+        {% if CLOUD_MODE %}
+        <script src="https://cdn.tailwindcss.com"></script>
+        <script>tailwind.config={darkMode:'class'}</script>
+        {% else %}
         <link rel="stylesheet" href="/pulse.css">
+        {% endif %}
         <style>
             @keyframes pulse-alert { 0%, 100% { background-color: rgba(159, 18, 57, 0.2); } 50% { background-color: rgba(225, 29, 72, 0.5); } }
             .danger-row { animation: pulse-alert 2s infinite; border-left: 4px solid #f43f5e; }
