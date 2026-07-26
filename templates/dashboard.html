@@ -7,6 +7,7 @@
         {% if CLOUD_MODE %}
         <script src="https://cdn.tailwindcss.com"></script>
         <script>tailwind.config={darkMode:'class'}</script>
+        <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
         {% else %}
         <link rel="stylesheet" href="/pulse.css">
         {% endif %}
@@ -185,6 +186,7 @@
                     </div>
                     {% if is_pro %}<button onclick="runAiAudit()" class="px-5 py-2.5 bg-gradient-to-r from-cyan-500 to-emerald-500 font-bold rounded-lg text-xs tracking-widest">{{ t.ai_report_btn }}</button>{% endif %}
                     <button onclick="toggleSettingsModal()" class="p-2.5 bg-slate-900 border border-slate-800 rounded-lg text-slate-300">⚙️</button>
+                    {% if CLOUD_MODE %}<button onclick="cloudLogout()" class="px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-400 text-xs hover:text-white">登出</button>{% endif %}
                 </div>
             </div>
 
@@ -724,7 +726,20 @@
                 fetch('/delete/' + index, { method: 'POST' })
                 .then(r => { location.reload(); })
                 .catch(() => {});
+            }\n        </script>
+}
+        </script>
+        {% if CLOUD_MODE %}
+        <script>
+            const SB_URL = '{{ supabase_url }}';
+            const SB_KEY = '{{ supabase_key }}';
+            const sb = supabase.createClient(SB_URL, SB_KEY);
+            async function cloudLogout() {
+                await sb.auth.signOut();
+                document.cookie = 'sb-access-token=; path=/; max-age=0';
+                window.location.href = '/';
             }
         </script>
+        {% endif %}
     </body>
     </html>
