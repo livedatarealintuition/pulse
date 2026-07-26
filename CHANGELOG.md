@@ -1,6 +1,15 @@
 # Pulse Changelog
 
-## Session 8 — V1.8 → V1.820 (2026-07-22 ~ 23)
+## V1.9 — Unified Codebase (2026-07-26)
+
+- **CLOUD_MODE**: Single pulse_free.py for selfhosted (n200) + cloud (Render)
+- **Auth**: Supabase JWT via cookie, Google OAuth + email/pw
+- **Data layer**: JSON files (selfhosted) / Supabase (cloud) dispatch
+- **Dashboard**: Same template for both modes (Tailwind CDN for cloud)
+- **Logout**: Cloud mode logout button
+- **Deploy**: Render auto-deploy from `livedatarealintuition/pulse`
+
+## Session 8 — V1.820 (2026-07-22 ~ 23)
 **20 items total**
 
 ### V1.820
