@@ -1080,6 +1080,24 @@ def _render_dashboard():
             {% if is_pro %}
             <!-- Pro: 市場分佈 + 現金比率 -->
             <div class="grid grid-cols-2 gap-6 mb-8">
+            <!-- 📈 Performance Card -->
+            <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl mb-6">
+                <p class="text-slate-400 text-xs font-bold uppercase mb-3">{{ t.perf_title }}</p>
+                <div class="space-y-2 text-xs">
+                    {% for period in [('today', t.perf_today), ('wtd', t.perf_wtd), ('mtd', t.perf_mtd), ('ytd', t.perf_ytd)] %}
+                    {% set pct = perf[period[0]].pct %}
+                    {% set bar_w = [pct|abs * 3, 100]|min if pct else 0 %}
+                    <div class="flex items-center gap-3">
+                        <span class="text-slate-400 w-10 text-right font-mono">{{ period[1] }}</span>
+                        <div class="flex-1 bg-slate-800 rounded-full h-2.5 overflow-hidden">
+                            <div class="h-full rounded-full {% if pct >= 0 %}bg-emerald-400{% else %}bg-rose-500{% endif %}" style="width: {{ '%.0f'|format(bar_w) }}%"></div>
+                        </div>
+                        <span class="font-mono font-bold w-16 {% if pct >= 0 %}text-emerald-400{% else %}text-rose-500{% endif %}">{{ '%+.1f'|format(pct) }}%</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
                 <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl">
                     <p class="text-slate-400 text-xs font-bold uppercase mb-3">{{ t.card_market_dist }}</p>
                     {% set ns = namespace(markets={}) %}
@@ -1164,24 +1182,7 @@ def _render_dashboard():
                     </thead>
                     
                     {% for stock in stocks %}
-                    <!-- 📈 Performance Card -->
-            <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl mb-8">
-                <p class="text-slate-400 text-xs font-bold uppercase mb-3">{{ t.perf_title }}</p>
-                <div class="space-y-2 text-xs">
-                    {% for period in [('today', t.perf_today), ('wtd', t.perf_wtd), ('mtd', t.perf_mtd), ('ytd', t.perf_ytd)] %}
-                    {% set pct = perf[period[0]].pct %}
-                    {% set bar_w = [pct|abs * 3, 100]|min if pct else 0 %}
-                    <div class="flex items-center gap-3">
-                        <span class="text-slate-400 w-10 text-right font-mono">{{ period[1] }}</span>
-                        <div class="flex-1 bg-slate-800 rounded-full h-2.5 overflow-hidden">
-                            <div class="h-full rounded-full {% if pct >= 0 %}bg-emerald-400{% else %}bg-rose-500{% endif %}" style="width: {{ '%.0f'|format(bar_w) }}%"></div>
-                        </div>
-                        <span class="font-mono font-bold w-16 {% if pct >= 0 %}text-emerald-400{% else %}text-rose-500{% endif %}">{{ '%+.1f'|format(pct) }}%</span>
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
-
+            <!-- 🌟 股票核心資料列 -->
             <!-- 🌟 股票核心資料列 -->
                     <tbody class="border-b border-slate-800/80" data-market="{{ stock.market }}">
                         <tr class="hover:bg-slate-800/30 cursor-pointer transition-colors {% if stock.is_danger %}danger-row{% endif %}" onclick="toggleHistory('details-{{ stock.ticker }}')">
