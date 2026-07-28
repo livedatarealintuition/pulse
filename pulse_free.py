@@ -827,29 +827,27 @@ def _render_dashboard():
 
     perf = {}
     for label in ['today', 'wtd', 'mtd', 'ytd']:
-        perf[label] = {'mv': 0, 'cost': 0, 'pct': 0}
+        perf[label] = {'mv': 0, 'pct': 0}
     today_mv = total_mv_usd
-    wtd_mv = mtd_mv = ytd_mv = 0
+    yesterday_mv = wtd_mv = mtd_mv = ytd_mv = 0
     for s in stocks:
         tk = s['ticker']
         shares = s.get('total_shares_raw', s.get('total_shares', 0))
         if isinstance(shares, str):
             shares = float(shares.replace(',', ''))
-        for label, date_str in [('wtd', wtd_date), ('mtd', mtd_date), ('ytd', ytd_date)]:
+        for label, date_str in [('yesterday', yesterday), ('wtd', wtd_date), ('mtd', mtd_date), ('ytd', ytd_date)]:
             hp = hist_prices.get(tk, {}).get(label)
             if hp:
-                if label == 'wtd': wtd_mv += hp * float(shares)
-                elif label == 'mtd': mtd_mv += hp * float(shares)
-                elif label == 'ytd': ytd_mv += hp * float(shares)
-    # Today = already have total_mv_usd
-    perf['today'] = {'mv': today_mv, 'cost': total_open_cost,
-                     'pct': (today_mv - total_open_cost) / total_open_cost * 100 if total_open_cost > 0 else 0}
-    perf['wtd'] = {'mv': wtd_mv, 'cost': total_open_cost,
-                   'pct': (today_mv - wtd_mv) / wtd_mv * 100 if wtd_mv > 0 else 0}
-    perf['mtd'] = {'mv': mtd_mv, 'cost': total_open_cost,
-                   'pct': (today_mv - mtd_mv) / mtd_mv * 100 if mtd_mv > 0 else 0}
-    perf['ytd'] = {'mv': ytd_mv, 'cost': total_open_cost,
-                   'pct': (today_mv - ytd_mv) / ytd_mv * 100 if ytd_mv > 0 else 0}
+                mv_contrib = hp * float(shares)
+                if label == 'yesterday': yesterday_mv += mv_contrib
+                elif label == 'wtd': wtd_mv += mv_contrib
+                elif label == 'mtd': mtd_mv += mv_contrib
+                elif label == 'ytd': ytd_mv += mv_contrib
+    # Today = (current MV - yesterday MV) / yesterday MV
+    perf['today'] = {'mv': today_mv, 'pct': (today_mv - yesterday_mv) / yesterday_mv * 100 if yesterday_mv > 0 else 0}
+    perf['wtd'] = {'mv': today_mv, 'pct': (today_mv - wtd_mv) / wtd_mv * 100 if wtd_mv > 0 else 0}
+    perf['mtd'] = {'mv': today_mv, 'pct': (today_mv - mtd_mv) / mtd_mv * 100 if mtd_mv > 0 else 0}
+    perf['ytd'] = {'mv': today_mv, 'pct': (today_mv - ytd_mv) / ytd_mv * 100 if ytd_mv > 0 else 0}
 
     is_active = check_us_market_active_hours()
     markets_status = {k: is_market_open(k) for k in MARKETS}
