@@ -1642,6 +1642,7 @@ def _render_dashboard():
         targets_json=targets_json, markets_status=markets_status,
         active_markets=active_markets, version=VERSION, changelog=CHANGELOG,
         today_date=date_str, config=config, is_pro=get_is_pro(),
+        perf=perf,
         total_mv_usd_raw=total_mv_usd, total_open_cost_raw=total_open_cost,
         cash_balance=config.get("cash_balance", 0))
 
