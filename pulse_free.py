@@ -426,6 +426,32 @@ def get_effective_ttl():
     """Return short TTL during trading hours, long TTL when all markets closed."""
     return PRICE_CACHE_TTL if check_any_market_active() else PRICE_CACHE_TTL_IDLE
 
+def get_historical_prices(tickers, dates):
+    """Fetch historical close prices at specific dates using yfinance."""
+    if not tickers: return {}
+    result = {t: {} for t in tickers}
+    all_dates = [d[1] for d in dates]
+    try:
+        data = yf.download(' '.join(tickers), start=min(all_dates), end=max(all_dates),
+                          progress=False, auto_adjust=True)
+        if data.empty: return result
+        close = data.get('Close', data)
+        for ticker in tickers:
+            for label, date_str in dates:
+                try:
+                    if ticker in close.columns:
+                        val = close[ticker].loc[date_str:date_str]
+                        if len(val) > 0: result[ticker][label] = float(val.iloc[0])
+                    elif len(tickers) == 1:
+                        val = close.loc[date_str:date_str]
+                        if len(val) > 0: result[ticker][label] = float(val.iloc[0])
+                except Exception:
+                    result[ticker][label] = None
+    except Exception as e:
+        print(f"[get_historical_prices] error: {e}")
+    return result
+
+
 def _batch_fetch_prices(tickers_list):
     """Fetch prices for multiple tickers with TTL-aware caching.
     Returns cached data for fresh tickers; only calls yfinance for stale ones
