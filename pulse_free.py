@@ -119,6 +119,11 @@ TRANSLATIONS = {
         "table_weight": "持股權重",
         "card_market_dist": "市場分佈",
         "card_cash_ratio": "現金比率",
+        "perf_title": "📈 投資表現",
+        "perf_today": "今日",
+        "perf_wtd": "本週",
+        "perf_mtd": "本月",
+        "perf_ytd": "今年",
         "settings_cash_balance": "現金餘額 (USD)",
         "settings_timeout_hint": "建議 30-120 秒",
         "settings_prompt_hint": "可用變數：{summary} {holdings} {alloc} {lang}。留空使用分析風格的預設 Prompt。",
@@ -223,6 +228,11 @@ TRANSLATIONS = {
         "table_weight": "持股权重",
         "card_market_dist": "市场分布",
         "card_cash_ratio": "现金比率",
+        "perf_title": "📈 投资表现",
+        "perf_today": "今日",
+        "perf_wtd": "本周",
+        "perf_mtd": "本月",
+        "perf_ytd": "今年",
         "settings_cash_balance": "现金余额 (USD)",
         "settings_timeout_hint": "建议 30-120 秒",
         "settings_prompt_hint": "可用变数：{summary} {holdings} {alloc} {lang}。留空使用分析风格的预设 Prompt。",
@@ -327,6 +337,11 @@ TRANSLATIONS = {
         "table_weight": "Weight %",
         "card_market_dist": "Market Distribution",
         "card_cash_ratio": "Cash Ratio",
+        "perf_title": "📈 Performance",
+        "perf_today": "Today",
+        "perf_wtd": "WTD",
+        "perf_mtd": "MTD",
+        "perf_ytd": "YTD",
         "settings_cash_balance": "Cash Balance (USD)",
         "settings_timeout_hint": "Recommend 30-120 sec",
         "settings_prompt_hint": "Variables: {summary} {holdings} {alloc} {lang}. Leave empty to use Analysis Style preset.",
@@ -427,41 +442,28 @@ def get_effective_ttl():
     return PRICE_CACHE_TTL if check_any_market_active() else PRICE_CACHE_TTL_IDLE
 
 def get_historical_prices(tickers, dates):
-    """Fetch historical close prices at specific dates using yfinance.
-    Falls back to nearest prior trading day if exact date has no data."""
+    """Fetch historical close prices using yfinance Ticker.history().
+    Returns {ticker: {label: price_or_None}}."""
     if not tickers: return {}
     result = {t: {} for t in tickers}
-    all_dates = [d[1] for d in dates]
     from datetime import timedelta as td
-    # Extend range by 5 days before to catch weekends/holidays
-    min_dt = datetime.strptime(min(all_dates), '%Y-%m-%d') - td(days=5)
-    max_dt = datetime.strptime(max(all_dates), '%Y-%m-%d') + td(days=1)
-    try:
-        data = yf.download(' '.join(tickers), start=min_dt.strftime('%Y-%m-%d'),
-                          end=max_dt.strftime('%Y-%m-%d'), progress=False, auto_adjust=True)
-        if data.empty: return result
-        close = data.get('Close', data)
-        for ticker in tickers:
+    for ticker in tickers:
+        try:
+            t = yf.Ticker(ticker)
+            min_dt = datetime.strptime(min(d[1] for d in dates), '%Y-%m-%d') - td(days=5)
+            hist = t.history(start=min_dt.strftime('%Y-%m-%d'), period='max')
+            if hist.empty: continue
             for label, date_str in dates:
-                try:
-                    target = datetime.strptime(date_str, '%Y-%m-%d')
-                    # Walk back up to 5 days to find a trading day
-                    for _ in range(5):
-                        ds = target.strftime('%Y-%m-%d')
-                        if ticker in close.columns:
-                            val = close[ticker].loc[ds:ds]
-                        elif len(tickers) == 1:
-                            val = close.loc[ds:ds]
-                        else:
-                            val = close[ticker].loc[ds:ds] if ticker in close.columns else []
-                        if len(val) > 0:
-                            result[ticker][label] = float(val.iloc[0])
-                            break
-                        target -= td(days=1)
-                except Exception:
-                    result[ticker][label] = None
-    except Exception as e:
-        print(f"[get_historical_prices] error: {e}")
+                target = datetime.strptime(date_str, '%Y-%m-%d')
+                for _ in range(5):
+                    ds = target.strftime('%Y-%m-%d')
+                    if ds in hist.index.strftime('%Y-%m-%d'):
+                        val = hist.loc[ds, 'Close']
+                        result[ticker][label] = float(val)
+                        break
+                    target -= td(days=1)
+        except Exception:
+            pass
     return result
 
 
