@@ -1,7 +1,9 @@
 # Pulse Changelog
 
-## Session 9 — V1.91 (2026-07-26)
-**1 item**
+## Session 9 — V1.91 → V1.92 (2026-07-26 ~ 28)
+
+### V1.92
+- Remove CLOUD_MODE — pure selfhosted Flask codebase (cloud split to standalone repo)
 
 ### V1.91
 - CLOUD_MODE: Supabase auth (login/logout), dark mode toggle, data layer dispatch
