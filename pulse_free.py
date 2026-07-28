@@ -1722,7 +1722,12 @@ def api_export():
         data["watchlist"] = {"categories": wl.get("categories", {}), "targets": wl.get("targets", {})}
     if export_pf:
         pf = load_portfolio()
-        data["portfolio"] = pf
+        # Strip internal fields (id, user_id, sort_order, etc.)
+        clean_pf = []
+        for tx in pf:
+            clean_tx = {k: v for k, v in tx.items() if k not in ('id', 'user_id', 'sort_order')}
+            clean_pf.append(clean_tx)
+        data["portfolio"] = clean_pf
     return jsonify(data)
 
 
