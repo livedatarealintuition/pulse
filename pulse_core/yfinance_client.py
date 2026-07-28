@@ -173,5 +173,41 @@ def start_background_poller(tickers_callback, interval: int = 60):
     _poller_thread.start()
 
 
+def get_historical_prices(tickers, dates):
+    """Fetch historical close prices for given tickers at specific dates.
+    dates: list of (label, date_str) tuples, e.g. [('yesterday', '2026-07-27')]
+    Returns: {ticker: {label: price or None}}
+    Uses batch download for efficiency."""
+    if not tickers:
+        return {}
+    result = {t: {} for t in tickers}
+    # Find date range
+    all_dates = [d[1] for d in dates]
+    min_date = min(all_dates)
+    max_date = max(all_dates) + 'T23:59:59'  # include end date
+    try:
+        data = yf.download(' '.join(tickers), start=min_date, end=max_date,
+                          progress=False, auto_adjust=True)
+        if data.empty:
+            return result
+        close = data.get('Close', data)
+        for ticker in tickers:
+            for label, date_str in dates:
+                try:
+                    if ticker in close.columns:
+                        val = close[ticker].loc[date_str:date_str]
+                        if len(val) > 0:
+                            result[ticker][label] = float(val.iloc[0])
+                    elif len(tickers) == 1:
+                        val = close.loc[date_str:date_str]
+                        if len(val) > 0:
+                            result[ticker][label] = float(val.iloc[0])
+                except Exception:
+                    result[ticker][label] = None
+    except Exception as e:
+        print(f"[get_historical_prices] error: {e}")
+    return result
+
+
 def stop_background_poller():
     _poller_stop.set()

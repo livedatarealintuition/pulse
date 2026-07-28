@@ -5,7 +5,7 @@ import requests
 from requests.exceptions import Timeout, ConnectionError as ReqConnectionError
 import time
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from flask import Flask, render_template_string, request, redirect, url_for, jsonify, send_from_directory
 import yfinance as yf
@@ -20,9 +20,10 @@ PORTFOLIO_JSON = os.path.join(BASE_DIR, "portfolio.json")
 WATCHLIST_JSON = os.path.join(BASE_DIR, "watchlist.json")  
 CONFIG_JSON = os.path.join(BASE_DIR, "system_config.json")
 
-VERSION = "V1.94"
+VERSION = "V1.95"
 IS_PRO = False  # 由 pulse_pro.py 覆蓋為 True
 CHANGELOG = [
+    ("V1.95", "[Session 9] Performance card: Today/WTD/MTD/YTD returns using historical prices"),
     ("V1.94", "[Session 9] Watchlist multi-market support, JSON import/export (watchlist + portfolio)"),
     ("V1.93", "[Session 9] Company names in ticker display, watchlist sidebar indicator, remove $ prefix"),
     ("V1.92", "[Session 9] Remove CLOUD_MODE — pure selfhosted Flask codebase"),
@@ -768,6 +769,47 @@ def _render_dashboard():
     total_roi_str = f"{total_roi:+.2f}%"
     
     date_str = datetime.now().strftime("%Y-%m-%d")
+
+    # Performance: today, WTD, MTD, YTD
+    today = datetime.now()
+    yesterday = (today - timedelta(days=1)).strftime('%Y-%m-%d')
+    # WTD: Monday of current week
+    wtd_date = (today - timedelta(days=today.weekday())).strftime('%Y-%m-%d')
+    # MTD: 1st of current month
+    mtd_date = today.strftime('%Y-%m-01')
+    # YTD: Jan 1
+    ytd_date = today.strftime('%Y-01-01')
+
+    perf_tickers = list(open_tickers)
+    perf_dates = [('yesterday', yesterday), ('wtd', wtd_date), ('mtd', mtd_date), ('ytd', ytd_date)]
+    hist_prices = get_historical_prices(perf_tickers, perf_dates) if perf_tickers else {}
+
+    perf = {}
+    for label in ['today', 'wtd', 'mtd', 'ytd']:
+        perf[label] = {'mv': 0, 'cost': 0, 'pct': 0}
+    today_mv = total_mv_usd
+    wtd_mv = mtd_mv = ytd_mv = 0
+    for s in stocks:
+        tk = s['ticker']
+        shares = s.get('total_shares_raw', s.get('total_shares', 0))
+        if isinstance(shares, str):
+            shares = float(shares.replace(',', ''))
+        for label, date_str in [('wtd', wtd_date), ('mtd', mtd_date), ('ytd', ytd_date)]:
+            hp = hist_prices.get(tk, {}).get(label)
+            if hp:
+                if label == 'wtd': wtd_mv += hp * float(shares)
+                elif label == 'mtd': mtd_mv += hp * float(shares)
+                elif label == 'ytd': ytd_mv += hp * float(shares)
+    # Today = already have total_mv_usd
+    perf['today'] = {'mv': today_mv, 'cost': total_open_cost,
+                     'pct': (today_mv - total_open_cost) / total_open_cost * 100 if total_open_cost > 0 else 0}
+    perf['wtd'] = {'mv': wtd_mv, 'cost': total_open_cost,
+                   'pct': (today_mv - wtd_mv) / wtd_mv * 100 if wtd_mv > 0 else 0}
+    perf['mtd'] = {'mv': mtd_mv, 'cost': total_open_cost,
+                   'pct': (today_mv - mtd_mv) / mtd_mv * 100 if mtd_mv > 0 else 0}
+    perf['ytd'] = {'mv': ytd_mv, 'cost': total_open_cost,
+                   'pct': (today_mv - ytd_mv) / ytd_mv * 100 if ytd_mv > 0 else 0}
+
     is_active = check_us_market_active_hours()
     markets_status = {k: is_market_open(k) for k in MARKETS}
     is_pro = get_is_pro()
@@ -1081,7 +1123,20 @@ def _render_dashboard():
                     </thead>
                     
                     {% for stock in stocks %}
-                    <!-- 🌟 股票核心資料列 -->
+                    <!-- 📈 Performance Card -->
+            <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl mb-8">
+                <p class="text-slate-400 text-xs font-bold uppercase mb-3">{{ t.perf_title }}</p>
+                <div class="grid grid-cols-4 gap-4 text-center">
+                    {% for period in [('today', t.perf_today), ('wtd', t.perf_wtd), ('mtd', t.perf_mtd), ('ytd', t.perf_ytd)] %}
+                    <div>
+                        <p class="text-slate-500 text-[10px] uppercase tracking-wider">{{ period[1] }}</p>
+                        <p class="text-lg font-black {% if perf[period[0]].pct >= 0 %}text-emerald-400{% else %}text-rose-500{% endif %}">{{ '%+.1f'|format(perf[period[0]].pct) }}%</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- 🌟 股票核心資料列 -->
                     <tbody class="border-b border-slate-800/80" data-market="{{ stock.market }}">
                         <tr class="hover:bg-slate-800/30 cursor-pointer transition-colors {% if stock.is_danger %}danger-row{% endif %}" onclick="toggleHistory('details-{{ stock.ticker }}')">
                             <td class="px-6 py-4 text-center text-cyan-400 font-bold select-none text-sm">▶</td>
