@@ -688,7 +688,7 @@ def build_watchlist_html(t):
             html += f"""
             <div class="flex justify-between items-center p-1.5 rounded bg-slate-900/40 hover:bg-slate-900/90 transition-colors text-xs">
                 <div class="flex items-center gap-1">
-                    <span class="font-bold font-mono text-slate-300">${tk}</span>
+                    <span class="font-bold font-mono text-slate-300">{tk}</span>
                     <button onclick="deleteTickerFromCategory('{esc_cat}', '{tk}')" class="text-slate-600 hover:text-rose-500">×</button>
                 </div>
                 <div class="flex items-center gap-2">
