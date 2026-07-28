@@ -427,24 +427,37 @@ def get_effective_ttl():
     return PRICE_CACHE_TTL if check_any_market_active() else PRICE_CACHE_TTL_IDLE
 
 def get_historical_prices(tickers, dates):
-    """Fetch historical close prices at specific dates using yfinance."""
+    """Fetch historical close prices at specific dates using yfinance.
+    Falls back to nearest prior trading day if exact date has no data."""
     if not tickers: return {}
     result = {t: {} for t in tickers}
     all_dates = [d[1] for d in dates]
+    from datetime import timedelta as td
+    # Extend range by 5 days before to catch weekends/holidays
+    min_dt = datetime.strptime(min(all_dates), '%Y-%m-%d') - td(days=5)
+    max_dt = datetime.strptime(max(all_dates), '%Y-%m-%d') + td(days=1)
     try:
-        data = yf.download(' '.join(tickers), start=min(all_dates), end=max(all_dates),
-                          progress=False, auto_adjust=True)
+        data = yf.download(' '.join(tickers), start=min_dt.strftime('%Y-%m-%d'),
+                          end=max_dt.strftime('%Y-%m-%d'), progress=False, auto_adjust=True)
         if data.empty: return result
         close = data.get('Close', data)
         for ticker in tickers:
             for label, date_str in dates:
                 try:
-                    if ticker in close.columns:
-                        val = close[ticker].loc[date_str:date_str]
-                        if len(val) > 0: result[ticker][label] = float(val.iloc[0])
-                    elif len(tickers) == 1:
-                        val = close.loc[date_str:date_str]
-                        if len(val) > 0: result[ticker][label] = float(val.iloc[0])
+                    target = datetime.strptime(date_str, '%Y-%m-%d')
+                    # Walk back up to 5 days to find a trading day
+                    for _ in range(5):
+                        ds = target.strftime('%Y-%m-%d')
+                        if ticker in close.columns:
+                            val = close[ticker].loc[ds:ds]
+                        elif len(tickers) == 1:
+                            val = close.loc[ds:ds]
+                        else:
+                            val = close[ticker].loc[ds:ds] if ticker in close.columns else []
+                        if len(val) > 0:
+                            result[ticker][label] = float(val.iloc[0])
+                            break
+                        target -= td(days=1)
                 except Exception:
                     result[ticker][label] = None
     except Exception as e:
@@ -1150,13 +1163,18 @@ def _render_dashboard():
                     
                     {% for stock in stocks %}
                     <!-- 📈 Performance Card -->
-            <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl mb-8">
+            <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl mb-8">
                 <p class="text-slate-400 text-xs font-bold uppercase mb-3">{{ t.perf_title }}</p>
-                <div class="grid grid-cols-4 gap-4 text-center">
+                <div class="space-y-2 text-xs">
                     {% for period in [('today', t.perf_today), ('wtd', t.perf_wtd), ('mtd', t.perf_mtd), ('ytd', t.perf_ytd)] %}
-                    <div>
-                        <p class="text-slate-500 text-[10px] uppercase tracking-wider">{{ period[1] }}</p>
-                        <p class="text-lg font-black {% if perf[period[0]].pct >= 0 %}text-emerald-400{% else %}text-rose-500{% endif %}">{{ '%+.1f'|format(perf[period[0]].pct) }}%</p>
+                    {% set pct = perf[period[0]].pct %}
+                    {% set bar_w = [pct|abs * 3, 100]|min if pct else 0 %}
+                    <div class="flex items-center gap-3">
+                        <span class="text-slate-400 w-10 text-right font-mono">{{ period[1] }}</span>
+                        <div class="flex-1 bg-slate-800 rounded-full h-2.5 overflow-hidden">
+                            <div class="h-full rounded-full {% if pct >= 0 %}bg-emerald-400{% else %}bg-rose-500{% endif %}" style="width: {{ '%.0f'|format(bar_w) }}%"></div>
+                        </div>
+                        <span class="font-mono font-bold w-16 {% if pct >= 0 %}text-emerald-400{% else %}text-rose-500{% endif %}">{{ '%+.1f'|format(pct) }}%</span>
                     </div>
                     {% endfor %}
                 </div>
