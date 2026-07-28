@@ -1,0 +1,9 @@
+[build-system]
+requires = ["setuptools>=64.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "pulse_core"
+version = "1.0.0"
+description = "Pulse portfolio dashboard — shared calculation engine"
+requires-python = ">=3.9"
