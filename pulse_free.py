@@ -1124,16 +1124,14 @@ def _render_dashboard():
             {% endif %}
             {% if not is_pro %}
             <!-- 📈 Performance (Free) -->
-            <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl mb-8">
-                <p class="text-slate-400 text-xs font-bold uppercase mb-3">{{ t.perf_title }}</p>
-                <div class="grid grid-cols-4 gap-4 text-center text-xs">
-                    {% for period in [('today', t.perf_today), ('wtd', t.perf_wtd), ('mtd', t.perf_mtd), ('ytd', t.perf_ytd)] %}
-                    <div>
-                        <p class="text-slate-500 text-[10px] uppercase">{{ period[1] }}</p>
-                        <p class="text-xl font-black {% if perf[period[0]].pct >= 0 %}text-emerald-400{% else %}text-rose-500{% endif %}">{{ '%+.1f'|format(perf[period[0]].pct) }}%</p>
-                    </div>
-                    {% endfor %}
+            <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl mb-8 flex items-center gap-6">
+                <p class="text-slate-400 text-xs font-bold uppercase whitespace-nowrap">{{ t.perf_title }}</p>
+                {% for period in [('today', t.perf_today), ('wtd', t.perf_wtd), ('mtd', t.perf_mtd), ('ytd', t.perf_ytd)] %}
+                <div class="flex items-center gap-1.5">
+                    <span class="text-slate-500 text-[10px] uppercase">{{ period[1] }}</span>
+                    <span class="font-mono font-bold text-sm {% if perf[period[0]].pct >= 0 %}text-emerald-400{% else %}text-rose-500{% endif %}">{{ '%+.1f'|format(perf[period[0]].pct) }}%</span>
                 </div>
+                {% endfor %}
             </div>
             {% endif %}
 
