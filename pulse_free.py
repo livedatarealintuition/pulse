@@ -20,9 +20,10 @@ PORTFOLIO_JSON = os.path.join(BASE_DIR, "portfolio.json")
 WATCHLIST_JSON = os.path.join(BASE_DIR, "watchlist.json")  
 CONFIG_JSON = os.path.join(BASE_DIR, "system_config.json")
 
-VERSION = "V1.93"
+VERSION = "V1.94"
 IS_PRO = False  # 由 pulse_pro.py 覆蓋為 True
 CHANGELOG = [
+    ("V1.94", "[Session 9] Watchlist multi-market support, JSON import/export (watchlist + portfolio)"),
     ("V1.93", "[Session 9] Company names in ticker display, watchlist sidebar indicator, remove $ prefix"),
     ("V1.92", "[Session 9] Remove CLOUD_MODE — pure selfhosted Flask codebase"),
     ("V1.91", "[Session 9] CLOUD_MODE: Supabase auth, dark mode, logout, data layer dispatch"),
@@ -132,6 +133,17 @@ TRANSLATIONS = {
         "wl_delete_cat": "刪除組",
         "wl_input_placeholder": "輸入代碼",
         "wl_new_cat_prompt": "新分組名稱",
+        "wl_market_label": "市場",
+        "export_btn": "📤 導出",
+        "import_btn": "📥 導入",
+        "import_preview": "導入預覽",
+        "import_confirm": "確認導入",
+        "import_watchlist": "自選股",
+        "import_portfolio": "交易明細",
+        "import_will_add": "將新增",
+        "import_exists_skip": "已存在，跳過",
+        "import_success": "導入成功",
+        "export_select": "選擇導出內容",
         "watchlist_title": "🔍 WATCHLIST 自選股",
         "capital_recovered_badge": "💰 本金已收回",
         "capital_recover_hint": "💡 需再賣出",
@@ -225,6 +237,17 @@ TRANSLATIONS = {
         "wl_delete_cat": "删除组",
         "wl_input_placeholder": "输入代码",
         "wl_new_cat_prompt": "新分组名称",
+        "wl_market_label": "市场",
+        "export_btn": "📤 导出",
+        "import_btn": "📥 导入",
+        "import_preview": "导入预览",
+        "import_confirm": "确认导入",
+        "import_watchlist": "自选股",
+        "import_portfolio": "交易明细",
+        "import_will_add": "将新增",
+        "import_exists_skip": "已存在，跳过",
+        "import_success": "导入成功",
+        "export_select": "选择导出内容",
         "watchlist_title": "🔍 WATCHLIST 自选股",
         "capital_recovered_badge": "💰 本金已收回",
         "capital_recover_hint": "💡 需再卖出",
@@ -318,6 +341,17 @@ TRANSLATIONS = {
         "wl_delete_cat": "Delete Group",
         "wl_input_placeholder": "Enter ticker",
         "wl_new_cat_prompt": "New group name",
+        "wl_market_label": "Market",
+        "export_btn": "📤 Export",
+        "import_btn": "📥 Import",
+        "import_preview": "Import Preview",
+        "import_confirm": "Confirm Import",
+        "import_watchlist": "Watchlist",
+        "import_portfolio": "Portfolio",
+        "import_will_add": "Will add",
+        "import_exists_skip": "Exists, skip",
+        "import_success": "Import successful",
+        "export_select": "Select export data",
         "watchlist_title": "🔍 WATCHLIST",
         "capital_recovered_badge": "💰 Capital Recovered",
         "capital_recover_hint": "💡 Sell",
@@ -666,6 +700,12 @@ def build_watchlist_html(t):
                 <button onclick="deleteCategory('{esc_cat}')" class="text-[10px] text-slate-600 hover:text-rose-400 transition-colors">{wl_del_label}</button>
             </div>
             <div class="flex gap-1 mb-2">
+                <select id="wl-market-{cat_name}" class="bg-slate-900 border border-slate-800 text-[10px] p-1 rounded text-slate-400">
+                    <option value="US">US</option>
+                    <option value="HK">HK</option>
+                    <option value="CN">CN</option>
+                    <option value="TW">TW</option>
+                </select>
                 <input type="text" name="ticker" id="wl-input-{cat_name}" placeholder="{wl_placeholder}" class="wl-ticker-input bg-slate-900 border border-slate-800 text-[11px] p-1 rounded w-full uppercase focus:outline-none" onkeypress="if(event.key==='Enter') addTickerToCategory('{esc_cat}', this)">
                 <button onclick="addTickerToCategory('{esc_cat}', this)" class="bg-slate-800 text-xs px-2 rounded hover:bg-slate-700 transition-colors">+</button>
             </div>
@@ -878,6 +918,17 @@ def _render_dashboard():
                         <button type="submit" class="px-6 py-2 bg-cyan-600 hover:bg-cyan-500 font-black rounded text-slate-900 tracking-wider">{{ t.settings_save }}</button>
                     </div>
                 </form>
+
+                <!-- 📥📤 Import / Export -->
+                <div class="border-t border-slate-800 mt-4 pt-4">
+                    <p class="text-slate-500 text-[10px] font-bold uppercase mb-2">📥📤 Import / Export</p>
+                    <div class="flex gap-2">
+                        <button type="button" onclick="doExport()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded text-xs font-bold">{{ t.export_btn }}</button>
+                        <button type="button" onclick="document.getElementById('import-file').click()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded text-xs font-bold">{{ t.import_btn }}</button>
+                        <input type="file" id="import-file" accept=".json" onchange="doImport(this)" class="hidden">
+                    </div>
+                    <div id="import-preview" class="hidden mt-2 text-xs text-slate-400"></div>
+                </div>
 
                 <!-- 📋 更新日誌 -->
                 <div class="border-t border-slate-800 mt-4 pt-4">
@@ -1290,7 +1341,9 @@ def _render_dashboard():
                 const input = el.tagName === 'INPUT' ? el : el.previousElementSibling;
                 const ticker = input.value.trim().toUpperCase();
                 if (!ticker) return;
-                fetch('/api/wl/add_ticker', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({category: catName, ticker: ticker}) })
+                const marketSel = document.getElementById('wl-market-' + catName);
+                const market = marketSel ? marketSel.value : 'US';
+                fetch('/api/wl/add_ticker', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({category: catName, ticker: ticker, market: market}) })
                 .then(r => r.json()).then(d => { if (d.success) location.reload(); });
             }
             function deleteTickerFromCategory(catName, ticker) {
@@ -1459,6 +1512,44 @@ def _render_dashboard():
                 .catch(() => {});
             }
 
+            // 📥📤 Import / Export
+            function doExport() {
+                const wl = confirm('{{ t.import_watchlist }}?') ? '1' : '0';
+                const pf = confirm('{{ t.import_portfolio }}?') ? '1' : '0';
+                if (wl === '0' && pf === '0') return;
+                fetch('/api/export?watchlist=' + wl + '&portfolio=' + pf)
+                .then(r => r.json())
+                .then(data => {
+                    const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = 'pulse_export.json';
+                    a.click();
+                });
+            }
+            async function doImport(input) {
+                const file = input.files[0];
+                if (!file) return;
+                const text = await file.text();
+                let data;
+                try { data = JSON.parse(text); } catch(e) { alert('Invalid JSON'); return; }
+                const resp = await fetch('/api/import', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(data)
+                });
+                const result = await resp.json();
+                if (!result.success) { alert(result.error); return; }
+                const p = result.preview;
+                let msg = '';
+                if (p.watchlist && p.watchlist.length > 0) msg += '{{ t.import_watchlist }}: {{ t.import_will_add }} ' + p.watchlist.length + ' tickers\n';
+                if (p.watchlist_exists && p.watchlist_exists.length > 0) msg += '{{ t.import_watchlist }}: ' + p.watchlist_exists.length + ' {{ t.import_exists_skip }}\n';
+                if (p.portfolio && p.portfolio.length > 0) msg += '{{ t.import_portfolio }}: {{ t.import_will_add }} ' + p.portfolio.length + ' entries\n';
+                if (p.portfolio_exists && p.portfolio_exists.length > 0) msg += '{{ t.import_portfolio }}: ' + p.portfolio_exists.length + ' {{ t.import_exists_skip }}';
+                if (!msg) msg = '{{ t.import_exists_skip }}';
+                alert('{{ t.import_success }}!\n\n' + msg);
+                location.reload();
+            }
         </script>
 
     </body>
@@ -1531,7 +1622,26 @@ def api_wl_add_ticker():
     data = request.get_json()
     cat_name = data.get('category', '').strip()
     ticker = data.get('ticker', '').strip().upper()
+    market = data.get('market', 'US').strip()
     if not cat_name or not ticker: return jsonify({'success': False})
+    # Auto-append market suffix
+    SUFFIX_MAP = {"HK": ".HK", "TW": ".TW", "TWO": ".TWO"}
+    PAD_MAP = {"HK": 4, "CN": 6}
+    if market in SUFFIX_MAP and "." not in ticker:
+        if market in PAD_MAP and ticker.isdigit():
+            ticker = ticker.zfill(PAD_MAP[market])
+        ticker += SUFFIX_MAP[market]
+    elif market == "CN" and "." not in ticker:
+        if ticker.isdigit():
+            ticker = ticker.zfill(6)
+        SH_PREFIXES = ('600', '601', '603', '605', '688')
+        SZ_PREFIXES = ('000', '001', '002', '003', '300', '301')
+        if ticker[:3] in SH_PREFIXES:
+            ticker += '.SS'
+        elif ticker[:3] in SZ_PREFIXES:
+            ticker += '.SZ'
+        else:
+            ticker += '.SS'
     wl = load_watchlist()
     cats = wl.get('categories', {})
     if cat_name in cats and ticker not in cats[cat_name]:
@@ -1600,6 +1710,57 @@ def api_wl_delete_target():
         del targets[ticker]
         save_watchlist(wl)
     return jsonify({'success': True})
+
+@app.route('/api/export')
+def api_export():
+    """Export watchlist and/or portfolio as JSON."""
+    data = {"version": 1, "source": "pulse_free"}
+    export_wl = request.args.get("watchlist", "1") == "1"
+    export_pf = request.args.get("portfolio", "1") == "1"
+    if export_wl:
+        wl = load_watchlist()
+        data["watchlist"] = {"categories": wl.get("categories", {}), "targets": wl.get("targets", {})}
+    if export_pf:
+        pf = load_portfolio()
+        data["portfolio"] = pf
+    return jsonify(data)
+
+
+@app.route('/api/import', methods=['POST'])
+def api_import():
+    """Import watchlist and/or portfolio. Merges with existing data."""
+    import_data = request.get_json()
+    if not import_data:
+        return jsonify({"success": False, "error": "No data"})
+    preview = {"watchlist": [], "portfolio": [], "watchlist_exists": [], "portfolio_exists": []}
+    if "watchlist" in import_data:
+        wl = load_watchlist()
+        cats = wl.get("categories", {})
+        for cat, tickers in import_data["watchlist"].get("categories", {}).items():
+            for tk in tickers:
+                if tk not in cats.get(cat, []):
+                    cats.setdefault(cat, []).append(tk)
+                    preview["watchlist"].append({"category": cat, "ticker": tk})
+                else:
+                    preview["watchlist_exists"].append({"category": cat, "ticker": tk})
+        wl["categories"] = cats
+        for tk, price in import_data["watchlist"].get("targets", {}).items():
+            wl.setdefault("targets", {})[tk] = price
+        save_watchlist(wl)
+    if "portfolio" in import_data:
+        pf = load_portfolio()
+        existing = {(tx["ticker"].upper(), tx["date"]) for tx in pf}
+        for tx in import_data["portfolio"]:
+            key = (tx["ticker"].upper(), tx.get("date", ""))
+            if key not in existing:
+                pf.append(tx)
+                existing.add(key)
+                preview["portfolio"].append(tx)
+            else:
+                preview["portfolio_exists"].append(tx)
+        save_portfolio(pf)
+    return jsonify({"success": True, "preview": preview})
+
 
 @app.route('/api/wl/targets', methods=['GET'])
 def api_wl_targets():
