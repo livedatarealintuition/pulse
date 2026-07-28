@@ -20,9 +20,10 @@ PORTFOLIO_JSON = os.path.join(BASE_DIR, "portfolio.json")
 WATCHLIST_JSON = os.path.join(BASE_DIR, "watchlist.json")  
 CONFIG_JSON = os.path.join(BASE_DIR, "system_config.json")
 
-VERSION = "V1.92"
+VERSION = "V1.93"
 IS_PRO = False  # 由 pulse_pro.py 覆蓋為 True
 CHANGELOG = [
+    ("V1.93", "[Session 9] Company names in ticker display, watchlist sidebar indicator, remove $ prefix"),
     ("V1.92", "[Session 9] Remove CLOUD_MODE — pure selfhosted Flask codebase"),
     ("V1.91", "[Session 9] CLOUD_MODE: Supabase auth, dark mode, logout, data layer dispatch"),
     ("V1.820", "[Session 8] 20 items: Editable prompt (3 levels), mode toggle, i18n rebuild, Weight%, Market Dist, Cash Ratio, API confirm, smart errors, settings tabs, timeout, modal, label a11y"),
@@ -384,6 +385,7 @@ HIGHEST_PRICE_CACHE = {}
 PRICE_CACHE = {}
 PRICE_CACHE_TTL = 30          # seconds — active trading hours
 PRICE_CACHE_TTL_IDLE = 14400  # seconds (4h) — all markets closed
+COMPANY_NAMES = {}             # ticker → company name cache
 
 def get_effective_ttl():
     """Return short TTL during trading hours, long TTL when all markets closed."""
@@ -435,6 +437,22 @@ def _batch_fetch_prices(tickers_list):
                 results[tk] = {'price': cached['price'], 'prev_close': cached['prev_close']} if cached else {'price': 0.0, 'prev_close': 0.0}
 
     return results
+
+def get_company_name(ticker):
+    """Fetch company name from yfinance, with cache."""
+    tk = ticker.upper()
+    if tk in COMPANY_NAMES:
+        return COMPANY_NAMES[tk]
+    try:
+        t = yf.Ticker(ticker)
+        info = t.info
+        name = info.get('shortName') or info.get('longName') or ''
+        COMPANY_NAMES[tk] = name
+        return name
+    except Exception:
+        COMPANY_NAMES[tk] = ''
+        return ''
+
 
 def get_realtime_data(ticker):
     """Return {'price', 'prev_close', 'stale'} for a ticker.
@@ -699,6 +717,9 @@ def _render_dashboard():
     t = get_translations(config.get("language", "zh_tw"))
     stocks, open_tickers, ticker_market, total_mv_usd, total_open_cost, usd_hkd, sec_cur = calculate_portfolio_matrix()
     active_markets = set(ticker_market.values())
+    # Add company names (yfinance, cached)
+    for s in stocks:
+        s["company_name"] = get_company_name(s["ticker"])
     watchlist_html = build_watchlist_html(t)
     wl_data = load_watchlist()
     targets_json = wl_data.get("targets", {})
@@ -723,7 +744,9 @@ def _render_dashboard():
             @keyframes pulse-alert { 0%, 100% { background-color: rgba(159, 18, 57, 0.2); } 50% { background-color: rgba(225, 29, 72, 0.5); } }
             .danger-row { animation: pulse-alert 2s infinite; border-left: 4px solid #f43f5e; }
             .watchlist-sidebar { position: fixed; top: 0; left: 0; width: 280px; height: 100vh; background: #0f172a; border-right: 1px solid rgba(255, 255, 255, 0.1); z-index: 1000; padding: 20px 15px; transform: translateX(-265px); transition: transform 0.3s; }
+            .watchlist-sidebar::after { content: '📋'; position: absolute; right: -28px; top: 50%; transform: translateY(-50%); background: #0f172a; color: #34d399; padding: 12px 6px; border-radius: 0 6px 6px 0; font-size: 16px; writing-mode: horizontal-tb; border: 1px solid rgba(255,255,255,0.1); border-left: none; cursor: default; }
             .watchlist-sidebar:hover { transform: translateX(0); }
+            .watchlist-sidebar:hover::after { opacity: 0; }
             .wl-cat-group.dragging { opacity: 0.4; }
             .wl-cat-group.drag-over { border-top: 2px solid #34d399; }
             .modal-bg { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(2, 6, 23, 0.75); backdrop-filter: blur(4px); z-index: 2000; align-items: center; justify-content: center; }
@@ -1011,7 +1034,7 @@ def _render_dashboard():
                     <tbody class="border-b border-slate-800/80" data-market="{{ stock.market }}">
                         <tr class="hover:bg-slate-800/30 cursor-pointer transition-colors {% if stock.is_danger %}danger-row{% endif %}" onclick="toggleHistory('details-{{ stock.ticker }}')">
                             <td class="px-6 py-4 text-center text-cyan-400 font-bold select-none text-sm">▶</td>
-                            <td class="px-4 py-4 font-black text-slate-100 text-sm">${{ stock.ticker }}
+                            <td class="px-4 py-4 font-black text-slate-100 text-sm">{{ stock.ticker }}{% if stock.company_name %} <span class="text-slate-500 font-normal text-xs">{{ stock.company_name }}</span>{% endif %}
                                 <span id="badge-recovered-{{ stock.ticker }}" class="text-[10px] px-1.5 py-0.5 font-black rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 ml-1 {% if not stock.capital_recovered %}hidden{% endif %}">{{ t.capital_recovered_badge }}</span>
                             </td>
                             <td class="px-4 py-4 font-mono text-slate-300">{{ stock.total_shares }}</td>
@@ -1046,7 +1069,7 @@ def _render_dashboard():
                         <tr id="details-{{ stock.ticker }}" class="hidden bg-slate-950/40">
                             {% if is_pro %}<td colspan="9" class="px-8 py-4">{% else %}<td colspan="8" class="px-8 py-4">{% endif %}
                                 <div class="border-l-2 border-slate-700 pl-4 py-2">
-                                    <div class="text-slate-400 font-bold mb-2 uppercase font-mono tracking-wider text-[11px]">{{ t.history_title }} — ${{ stock.ticker }} | {{ t.capital_recovered_label }}: ${{ stock.capital_recovered_str }}</div>
+                                    <div class="text-slate-400 font-bold mb-2 uppercase font-mono tracking-wider text-[11px]">{{ t.history_title }} — {{ stock.ticker }}{% if stock.company_name %} - {{ stock.company_name }}{% endif %} | {{ t.capital_recovered_label }}: ${{ stock.capital_recovered_str }}</div>
                                     <table class="w-full text-left font-mono text-[11px] text-slate-400">
                                         <thead>
                                             <tr class="text-slate-500 border-b border-slate-800">
