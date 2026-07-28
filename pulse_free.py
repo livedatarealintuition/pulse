@@ -1541,13 +1541,13 @@ def _render_dashboard():
                 const result = await resp.json();
                 if (!result.success) { alert(result.error); return; }
                 const p = result.preview;
-                let msg = '';
-                if (p.watchlist && p.watchlist.length > 0) msg += '{{ t.import_watchlist }}: {{ t.import_will_add }} ' + p.watchlist.length + ' tickers\n';
-                if (p.watchlist_exists && p.watchlist_exists.length > 0) msg += '{{ t.import_watchlist }}: ' + p.watchlist_exists.length + ' {{ t.import_exists_skip }}\n';
-                if (p.portfolio && p.portfolio.length > 0) msg += '{{ t.import_portfolio }}: {{ t.import_will_add }} ' + p.portfolio.length + ' entries\n';
-                if (p.portfolio_exists && p.portfolio_exists.length > 0) msg += '{{ t.import_portfolio }}: ' + p.portfolio_exists.length + ' {{ t.import_exists_skip }}';
-                if (!msg) msg = '{{ t.import_exists_skip }}';
-                alert('{{ t.import_success }}!\n\n' + msg);
+                var lines = [];
+                if (p.watchlist && p.watchlist.length > 0) { lines.push('{{ t.import_watchlist }}: {{ t.import_will_add }} ' + p.watchlist.length + ' tickers'); }
+                if (p.watchlist_exists && p.watchlist_exists.length > 0) { lines.push('{{ t.import_watchlist }}: ' + p.watchlist_exists.length + ' {{ t.import_exists_skip }}'); }
+                if (p.portfolio && p.portfolio.length > 0) { lines.push('{{ t.import_portfolio }}: {{ t.import_will_add }} ' + p.portfolio.length + ' entries'); }
+                if (p.portfolio_exists && p.portfolio_exists.length > 0) { lines.push('{{ t.import_portfolio }}: ' + p.portfolio_exists.length + ' {{ t.import_exists_skip }}'); }
+                if (lines.length === 0) { lines.push('{{ t.import_exists_skip }}'); }
+                alert('{{ t.import_success }}! ' + lines.join(', '));
                 location.reload();
             }
         </script>
