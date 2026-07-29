@@ -174,38 +174,32 @@ def start_background_poller(tickers_callback, interval: int = 60):
 
 
 def get_historical_prices(tickers, dates):
-    """Fetch historical close prices for given tickers at specific dates.
-    dates: list of (label, date_str) tuples, e.g. [('yesterday', '2026-07-27')]
-    Returns: {ticker: {label: price or None}}
-    Uses batch download for efficiency."""
+    """Fetch historical close prices using per-ticker Ticker.history().
+    More reliable than batch download on datacenter IPs.
+    Returns {ticker: {label: price_or_None}} with 5-day lookback for non-trading days."""
     if not tickers:
         return {}
     result = {t: {} for t in tickers}
-    # Find date range
-    all_dates = [d[1] for d in dates]
-    min_date = min(all_dates)
-    max_date = max(all_dates) + 'T23:59:59'  # include end date
-    try:
-        data = yf.download(' '.join(tickers), start=min_date, end=max_date,
-                          progress=False, auto_adjust=True)
-        if data.empty:
-            return result
-        close = data.get('Close', data)
-        for ticker in tickers:
+    from datetime import timedelta as td
+    min_date_str = min(d[1] for d in dates)
+    for ticker in tickers:
+        try:
+            t = yf.Ticker(ticker)
+            min_dt = datetime.strptime(min_date_str, '%Y-%m-%d') - td(days=5)
+            hist = t.history(start=min_dt.strftime('%Y-%m-%d'), period='max')
+            if hist.empty:
+                continue
             for label, date_str in dates:
-                try:
-                    if ticker in close.columns:
-                        val = close[ticker].loc[date_str:date_str]
-                        if len(val) > 0:
-                            result[ticker][label] = float(val.iloc[0])
-                    elif len(tickers) == 1:
-                        val = close.loc[date_str:date_str]
-                        if len(val) > 0:
-                            result[ticker][label] = float(val.iloc[0])
-                except Exception:
-                    result[ticker][label] = None
-    except Exception as e:
-        print(f"[get_historical_prices] error: {e}")
+                target = datetime.strptime(date_str, '%Y-%m-%d')
+                for _ in range(5):  # 5-day lookback for weekends/holidays
+                    ds = target.strftime('%Y-%m-%d')
+                    if ds in hist.index.strftime('%Y-%m-%d'):
+                        val = hist.loc[ds, 'Close']
+                        result[ticker][label] = float(val)
+                        break
+                    target -= td(days=1)
+        except Exception:
+            pass
     return result
 
 
