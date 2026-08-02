@@ -20,9 +20,17 @@ PORTFOLIO_JSON = os.path.join(BASE_DIR, "portfolio.json")
 WATCHLIST_JSON = os.path.join(BASE_DIR, "watchlist.json")  
 CONFIG_JSON = os.path.join(BASE_DIR, "system_config.json")
 
-VERSION = "V1.95"
+VERSION = "V1.117"  # Session 10: Add JPY/EUR/GBP currency options
 IS_PRO = False  # 由 pulse_pro.py 覆蓋為 True
 CHANGELOG = [
+    ("V1.117", "[Session 10] Add JPY/EUR/GBP to currency dropdowns + FX matrix"),
+    ("V1.116", "[Session 10] Fix: avg_buy_price converted to primary currency, ATR tooltip on column header"),
+    ("V1.115", "[Session 10] Fix: clear HIGHEST_PRICE_CACHE per-request to prevent cross-currency pollution"),
+    ("V1.114", "[Session 10] Fix: ATR stop-loss now converted to primary currency (was raw native)"),
+    ("V1.113", "[Session 10] Fix: Performance card historical prices now converted to primary currency"),
+    ("V1.112", "[Session 10] Fix: FX cross-rate formula inverted, buy price label JS DOM timing, clean HKD/TWD symbols"),
+    ("V1.111", "[Session 10] Multi-currency Phase 2: primary/secondary currency, market-native buy/sell labels, FX cross-rate matrix, all prices in primary currency"),
+    ("V1.101", "[Session 10] Financial disclaimer banner on all pages"),
     ("V1.95", "[Session 9] Performance card: Today/WTD/MTD/YTD returns using historical prices"),
     ("V1.94", "[Session 9] Watchlist multi-market support, JSON import/export (watchlist + portfolio)"),
     ("V1.93", "[Session 9] Company names in ticker display, watchlist sidebar indicator, remove $ prefix"),
@@ -36,10 +44,13 @@ CHANGELOG = [
     ("V1.5", "[Session 5] Initial release: multi-market, buy/sell, i18n, watchlist, multi-currency"),
 ]
 
+CURRENCY_SYMBOLS = {"USD": "$", "HKD": "$", "TWD": "$", "CNY": "¥", "JPY": "¥", "EUR": "€", "GBP": "£"}
+CURRENCY_MAP = {"USD": "USD=X", "HKD": "HKD=X", "TWD": "TWD=X", "CNY": "CNY=X", "JPY": "JPY=X", "EUR": "EUR=X", "GBP": "GBP=X"}
 DEFAULT_CONFIG = {
     "api_key": "", "refresh_interval": 30, "language": "zh_tw",
     "ai_provider": "gemini", "ai_model": "gemini-2.5-flash",
     "custom_api_url": "https://generativelanguage.googleapis.com/v1beta/models/",
+    "primary_currency": "USD",
     "secondary_currency": "HKD",
     "ai_timeout": 60,
     "cash_balance": 0,
@@ -93,6 +104,7 @@ TRANSLATIONS = {
         "table_avg_price": "平衡價",
         "table_current_price": "即時現價與日變動",
         "table_stop_loss": "ATR 移動止蝕(2x)",
+        "table_stop_loss_hint": "以20日平均真實波幅(ATR)的2倍計算移動止蝕價，股價跌破止蝕價時觸發警告",
         "table_mv": "當前總現值",
         "table_pnl": "持倉盈虧",
         "history_title": "歷史流水明細",
@@ -124,7 +136,7 @@ TRANSLATIONS = {
         "perf_wtd": "本週",
         "perf_mtd": "本月",
         "perf_ytd": "今年",
-        "settings_cash_balance": "現金餘額 (USD)",
+        "settings_cash_balance": "現金餘額",
         "settings_timeout_hint": "建議 30-120 秒",
         "settings_prompt_hint": "可用變數：{summary} {holdings} {alloc} {lang}。留空使用分析風格的預設 Prompt。",
         "changelog_title": "更新日誌",
@@ -133,7 +145,9 @@ TRANSLATIONS = {
         "settings_api_url": "Custom API URL",
         "settings_api_key": "API Key",
         "settings_language": "介面語言",
-        "settings_currency": "顯示貨幣",
+        "settings_primary_currency": "主要貨幣",
+        "settings_secondary_currency": "次要貨幣 (≈)",
+        "settings_currency": "次要貨幣 (≈)",
         "settings_save": "儲存設定",
         "wl_add_cat": "+ 新增分組",
         "wl_delete_cat": "刪除組",
@@ -161,7 +175,8 @@ TRANSLATIONS = {
         "target_alert_current": "現價",
         "audit_title": "🧠 AI 投資組合分析報告",
         "audit_loading": "AI 分析中，請稍候...",
-        "audit_confirm": "將會使用你的 API Key 呼叫 AI 模型產生報告，確定要繼續嗎？"
+        "audit_confirm": "將會使用你的 API Key 呼叫 AI 模型產生報告，確定要繼續嗎？",
+        "disclaimer": "免責聲明：本應用程式僅供資訊記錄與教育參考，不構成任何財務、投資或法律建議。AI 分析為自動化生成，不應作為投資決策的唯一依據。"
     },
     "zh_cn": {
         "title": "Pulse",
@@ -202,6 +217,7 @@ TRANSLATIONS = {
         "table_avg_price": "平衡价",
         "table_current_price": "即时现价与日变动",
         "table_stop_loss": "ATR 移动止损(2x)",
+        "table_stop_loss_hint": "以20日平均真实波幅(ATR)的2倍计算移动止损价，股价跌破止损价时触发警告",
         "table_mv": "当前总现值",
         "table_pnl": "持仓盈亏",
         "history_title": "历史流水明细",
@@ -233,7 +249,7 @@ TRANSLATIONS = {
         "perf_wtd": "本周",
         "perf_mtd": "本月",
         "perf_ytd": "今年",
-        "settings_cash_balance": "现金余额 (USD)",
+        "settings_cash_balance": "现金余额",
         "settings_timeout_hint": "建议 30-120 秒",
         "settings_prompt_hint": "可用变数：{summary} {holdings} {alloc} {lang}。留空使用分析风格的预设 Prompt。",
         "changelog_title": "更新日志",
@@ -242,7 +258,9 @@ TRANSLATIONS = {
         "settings_api_url": "Custom API URL",
         "settings_api_key": "API Key",
         "settings_language": "界面语言",
-        "settings_currency": "显示货币",
+        "settings_primary_currency": "主要货币",
+        "settings_secondary_currency": "次要货币 (≈)",
+        "settings_currency": "次要货币 (≈)",
         "settings_save": "保存设定",
         "wl_add_cat": "+ 新增分组",
         "wl_delete_cat": "删除组",
@@ -270,7 +288,8 @@ TRANSLATIONS = {
         "target_alert_current": "现价",
         "audit_title": "🧠 AI 投资组合分析报告",
         "audit_loading": "AI 分析中，请稍候...",
-        "audit_confirm": "将会使用你的 API Key 调用 AI 模型生成报告，确定要继续吗？"
+        "audit_confirm": "将会使用你的 API Key 调用 AI 模型生成报告，确定要继续吗？",
+        "disclaimer": "免责声明：本应用程序仅供信息记录与教育参考，不构成任何财务、投资或法律建议。AI 分析为自动化生成，不应作为投资决策的唯一依据。"
     },
     "en": {
         "title": "Pulse",
@@ -311,6 +330,7 @@ TRANSLATIONS = {
         "table_avg_price": "Avg Cost",
         "table_current_price": "Price & Day Change",
         "table_stop_loss": "ATR Trailing Stop(2x)",
+        "table_stop_loss_hint": "2x 20-period Average True Range (ATR) trailing stop. Warning triggered when price falls below stop-loss.",
         "table_mv": "Market Value",
         "table_pnl": "P&L",
         "history_title": "Transaction History",
@@ -342,7 +362,7 @@ TRANSLATIONS = {
         "perf_wtd": "WTD",
         "perf_mtd": "MTD",
         "perf_ytd": "YTD",
-        "settings_cash_balance": "Cash Balance (USD)",
+        "settings_cash_balance": "Cash Balance",
         "settings_timeout_hint": "Recommend 30-120 sec",
         "settings_prompt_hint": "Variables: {summary} {holdings} {alloc} {lang}. Leave empty to use Analysis Style preset.",
         "changelog_title": "Changelog",
@@ -351,7 +371,9 @@ TRANSLATIONS = {
         "settings_api_url": "Custom API URL",
         "settings_api_key": "API Key",
         "settings_language": "Language",
-        "settings_currency": "Currency",
+        "settings_primary_currency": "Primary Currency",
+        "settings_secondary_currency": "Secondary (≈)",
+        "settings_currency": "Secondary (≈)",
         "settings_save": "Save Settings",
         "wl_add_cat": "+ Add Group",
         "wl_delete_cat": "Delete Group",
@@ -379,7 +401,8 @@ TRANSLATIONS = {
         "target_alert_current": "Current",
         "audit_title": "🧠 AI Portfolio Analysis Report",
         "audit_loading": "Analyzing with AI model...",
-        "audit_confirm": "This will use your API key to call the AI model. Continue?"
+        "audit_confirm": "This will use your API key to call the AI model. Continue?",
+        "disclaimer": "Disclaimer: This application is for informational and educational purposes only. It does not constitute financial, investment, or legal advice. AI-generated insights are automated analyses and should not be used as the sole basis for investment decisions."
     },
 }
 def get_translations(lang):
@@ -582,11 +605,78 @@ def fetch_atr_20(ticker):
             return ATR_CACHE[ticker]['atr']
         return 0.0
 
+# ==================== 💱 FX Matrix (Multi-Currency) ====================
+FX_CACHE = {}        # currency → {rate, ts}
+FX_CACHE_TTL = 300   # 5 minutes
+
 def get_fx_rate(currency):
-    rate_data = get_realtime_data(f"{currency}=X")
-    return rate_data['price'] if rate_data['price'] > 0 else None
+    """Get USD→currency rate. Returns float or None."""
+    if currency == "USD":
+        return 1.0
+    now = datetime.now()
+    cached = FX_CACHE.get(currency)
+    if cached and (now - cached["ts"]).total_seconds() < FX_CACHE_TTL:
+        return cached["rate"]
+    try:
+        ticker = CURRENCY_MAP.get(currency, f"{currency}=X")
+        t = yf.Ticker(ticker)
+        info = t.fast_info
+        rate = getattr(info, 'last_price', None) or getattr(info, 'regular_market_previous_close', None) or 0.0
+        if rate and rate > 0:
+            FX_CACHE[currency] = {"rate": float(rate), "ts": now}
+            return float(rate)
+    except Exception:
+        pass
+    # Fallback: try old realtime method
+    rt = get_realtime_data(f"{currency}=X")
+    if rt['price'] > 0:
+        FX_CACHE[currency] = {"rate": rt['price'], "ts": now}
+        return rt['price']
+    return None
+
+def get_fx_matrix():
+    """Build 4x4 cross-rate dict: {from_cur: {to_cur: rate}}."""
+    currencies = ["USD", "HKD", "TWD", "CNY", "JPY", "EUR", "GBP"]
+    # Get USD→X rates
+    rates = {}
+    for cur in currencies:
+        r = get_fx_rate(cur)
+        if r and r > 0:
+            rates[cur] = r
+    # Fallback defaults
+    defaults = {"HKD": 7.80, "TWD": 32.5, "CNY": 7.25, "USD": 1.0, "JPY": 150.0, "EUR": 0.92, "GBP": 0.79}
+    for cur in currencies:
+        if cur not in rates:
+            rates[cur] = defaults.get(cur, 1.0)
+    # Build cross matrix
+    matrix = {"rates": rates}
+    for src in currencies:
+        matrix[src] = {}
+        for dst in currencies:
+            if rates[dst] > 0:
+                matrix[src][dst] = rates[dst] / rates[src]
+    return matrix
+
+def convert_currency(amount, from_cur, to_cur, fx_matrix=None):
+    """Convert amount between currencies. Returns float."""
+    if from_cur == to_cur:
+        return float(amount)
+    if fx_matrix is None:
+        fx_matrix = get_fx_matrix()
+    rate = fx_matrix.get(from_cur, {}).get(to_cur, 1.0)
+    return float(amount) * rate
+
+def get_market_native_currency(market):
+    """Return native currency for a market."""
+    MAP = {"US": "USD", "HK": "HKD", "CN": "CNY", "TW": "TWD", "TWO": "TWD"}
+    return MAP.get(market, "USD")
+
+def get_currency_symbol(cur):
+    """Return symbol for a currency code."""
+    return CURRENCY_SYMBOLS.get(cur, "$")
 
 def get_usd_hkd_rate():
+    """Legacy — returns USD→HKD rate (deprecated, use get_fx_rate)."""
     return get_fx_rate("HKD") or 7.80
 
 # ==================== 🌍 多市場時段 ====================
@@ -623,10 +713,16 @@ def check_any_market_active():
 def calculate_portfolio_matrix():
     portfolio = load_portfolio()
     config = load_config()
+    # Clear cross-request caches to prevent currency pollution
+    HIGHEST_PRICE_CACHE.clear()
+    prim_cur = config.get("primary_currency", "USD")
     sec_cur = config.get("secondary_currency", "HKD")
-    usd_hkd = get_fx_rate(sec_cur) or get_usd_hkd_rate()
-    if sec_cur in ("EUR", "GBP") and usd_hkd:
-        usd_hkd = 1.0 / usd_hkd  # Yahoo quotes EUR/GBP as 1 CUR = X USD (indirect)
+    fx_matrix = get_fx_matrix()
+    prim_symbol = get_currency_symbol(prim_cur)
+    sec_symbol = get_currency_symbol(sec_cur)
+    prim_to_sec = fx_matrix.get(prim_cur, {}).get(sec_cur, 1.0)
+    if sec_cur in ("EUR", "GBP"):
+        prim_to_sec = 1.0 / prim_to_sec if prim_to_sec > 0 else 1.0
     aggregated = {}
     
     # 掃描原始流水帳，一邊分類一邊保留它在原始陣列的「絕對位置 index」
@@ -643,7 +739,7 @@ def calculate_portfolio_matrix():
         else: aggregated[ticker]['sells'].append(tx)
         
     processed_holdings, open_tickers_set, ticker_market = [], set(), {}
-    total_market_value_usd = total_open_cost_usd = 0.0
+    total_market_value_primary = total_open_cost_primary = 0.0
 
     # Batch fetch all prices in ONE yfinance call (massive reduction in API requests)
     all_tickers = list(aggregated.keys())
@@ -652,6 +748,10 @@ def calculate_portfolio_matrix():
     for ticker, data in aggregated.items():
         # 按日期排序各股票內部的明細
         data['history_txs'].sort(key=lambda x: x['date'])
+        mkt = data['history_txs'][0].get('market') or 'US'
+        native_cur = get_market_native_currency(mkt)
+        # Conversion rate: yfinance native price → primary currency
+        native_to_prim = fx_matrix.get(native_cur, {}).get(prim_cur, 1.0)
 
         total_buy_shares = sum(float(x['shares']) for x in data['buys'])
         total_buy_spend = sum(float(x['shares']) * float(x['price']) + float(x['commission']) for x in data['buys'])
@@ -660,21 +760,26 @@ def calculate_portfolio_matrix():
 
         current_shares = max(0.0, total_buy_shares - total_sell_shares)
         avg_buy_price = (total_buy_spend / total_buy_shares) if total_buy_shares > 0 else 0.0
+        # Convert stored prices (market-native) → primary currency
+        avg_buy_price = avg_buy_price * native_to_prim
         current_open_cost = current_shares * avg_buy_price
 
         # Batch-fetched prices include TTL cache hits + fresh yfinance data
         bp = batch_prices.get(ticker, {})
-        current_price = bp.get('price', 0.0) if bp.get('price', 0.0) > 0 else 0.0
-        prev_close = bp.get('prev_close', 0.0)
-        if current_price <= 0:
+        current_price_native = bp.get('price', 0.0) if bp.get('price', 0.0) > 0 else 0.0
+        prev_close_native = bp.get('prev_close', 0.0)
+        if current_price_native <= 0:
             # Last resort: individual cache/API fallback
             rt_data = get_realtime_data(ticker)
-            current_price, prev_close = rt_data['price'], rt_data['prev_close']
+            current_price_native, prev_close_native = rt_data['price'], rt_data['prev_close']
+        # Convert yfinance native prices → primary currency
+        current_price = current_price_native * native_to_prim
+        prev_close = prev_close_native * native_to_prim
         day_change = current_price - prev_close
         day_change_pct = (day_change / prev_close * 100) if prev_close > 0 else 0
         current_mv = current_shares * current_price
-        pnl_usd = current_mv - current_open_cost if current_shares > 0 else 0.0
-        roi = (pnl_usd / current_open_cost) * 100 if current_open_cost > 0 else 0.0
+        pnl_primary = current_mv - current_open_cost if current_shares > 0 else 0.0
+        roi = (pnl_primary / current_open_cost) * 100 if current_open_cost > 0 else 0.0
         
         # 本金收回追蹤
         capital_recovered_flag = (total_sell_proceeds >= total_buy_spend) and (total_buy_spend > 0)
@@ -685,12 +790,12 @@ def calculate_portfolio_matrix():
                 shares_to_sell_to_recover = min(remaining_cost / current_price, current_shares)
 
         if current_shares > 0:
-            total_market_value_usd += current_mv
-            total_open_cost_usd += current_open_cost
+            total_market_value_primary += current_mv
+            total_open_cost_primary += current_open_cost
             open_tickers_set.add(ticker)
-            ticker_market[ticker] = data['history_txs'][0].get('market') or 'US'
+            ticker_market[ticker] = mkt
             status = "OPEN"
-            atr_20 = fetch_atr_20(ticker)
+            atr_20 = fetch_atr_20(ticker) * native_to_prim
             HIGHEST_PRICE_CACHE[ticker] = max(HIGHEST_PRICE_CACHE.get(ticker, current_price), current_price, avg_buy_price)
             stop_loss = HIGHEST_PRICE_CACHE[ticker] - (2.0 * atr_20)
             is_danger = (current_price <= stop_loss) and (atr_20 > 0)
@@ -700,9 +805,9 @@ def calculate_portfolio_matrix():
         processed_holdings.append({
             'ticker': ticker, 'status': status, 'total_shares': f"{int(current_shares)}", 'avg_buy_price': f"{avg_buy_price:,.2f}", 'current_price': f"{current_price:,.2f}",
             'day_change': day_change, 'day_change_pct': day_change_pct, 'stop_loss': stop_loss, 'atr_20': atr_20, 'is_danger': is_danger, 'current_mv': f"{current_mv:,.2f}" if current_shares > 0 else '-', 'current_mv_raw': current_mv,
-            'pnl_usd_str': f"{pnl_usd:+,.2f}" if current_shares > 0 else '-', 'pnl_hkd_str': f"{(pnl_usd * usd_hkd):+,.2f}" if current_shares > 0 else '-', 'roi_str': f"{roi:+.2f}%" if current_shares > 0 else '-',
-            'market': data['history_txs'][0].get('market') or 'US',
-            'praw': pnl_usd,
+            'pnl_primary_str': f"{pnl_primary:+,.2f}" if current_shares > 0 else '-', 'pnl_sec_str': f"{(pnl_primary * prim_to_sec):+,.2f}" if current_shares > 0 else '-', 'roi_str': f"{roi:+.2f}%" if current_shares > 0 else '-',
+            'market': mkt,
+            'praw': pnl_primary,
             'capital_recovered': capital_recovered_flag,
             'capital_recovered_str': f"{total_sell_proceeds:,.2f}" if total_sell_proceeds > 0 else '-',
             'shares_to_sell_to_recover': f"{shares_to_sell_to_recover:.1f}",
@@ -712,7 +817,7 @@ def calculate_portfolio_matrix():
     market_order = {"US": 0, "HK": 1, "CN": 2, "TW": 3, "TWO": 4}
     processed_holdings.sort(key=lambda s: (market_order.get(s.get('market', 'US'), 99), s['ticker']))
     open_tickers_sorted = sorted(open_tickers_set, key=lambda t: (market_order.get(ticker_market.get(t, "US"), 99), t))
-    return processed_holdings, open_tickers_sorted, ticker_market, total_market_value_usd, total_open_cost_usd, usd_hkd, sec_cur
+    return processed_holdings, open_tickers_sorted, ticker_market, total_market_value_primary, total_open_cost_primary, prim_cur, prim_symbol, sec_cur, sec_symbol, prim_to_sec, fx_matrix
 
 def build_watchlist_html(t):
     wl_data = load_watchlist()
@@ -794,10 +899,12 @@ def get_is_pro():
 def _render_dashboard():
     """Render the Pulse dashboard — shared between selfhosted index() and cloud /dashboard."""
     config = load_config()
+    if "primary_currency" not in config:
+        config["primary_currency"] = "USD"
     if "secondary_currency" not in config:
         config["secondary_currency"] = "HKD"
     t = get_translations(config.get("language", "zh_tw"))
-    stocks, open_tickers, ticker_market, total_mv_usd, total_open_cost, usd_hkd, sec_cur = calculate_portfolio_matrix()
+    stocks, open_tickers, ticker_market, total_mv_primary, total_open_cost, prim_cur, prim_symbol, sec_cur, sec_symbol, prim_to_sec, fx_matrix = calculate_portfolio_matrix()
     active_markets = set(ticker_market.values())
     # Add company names (yfinance, cached)
     for s in stocks:
@@ -805,8 +912,8 @@ def _render_dashboard():
     watchlist_html = build_watchlist_html(t)
     wl_data = load_watchlist()
     targets_json = wl_data.get("targets", {})
-    total_pnl_usd = total_mv_usd - total_open_cost
-    total_roi = (total_pnl_usd / total_open_cost) * 100 if total_open_cost > 0 else 0.0
+    total_pnl_primary = total_mv_primary - total_open_cost
+    total_roi = (total_pnl_primary / total_open_cost) * 100 if total_open_cost > 0 else 0.0
     total_roi_str = f"{total_roi:+.2f}%"
     
     date_str = datetime.now().strftime("%Y-%m-%d")
@@ -828,17 +935,21 @@ def _render_dashboard():
     perf = {}
     for label in ['today', 'wtd', 'mtd', 'ytd']:
         perf[label] = {'mv': 0, 'pct': 0}
-    today_mv = total_mv_usd
+    today_mv = total_mv_primary
     yesterday_mv = wtd_mv = mtd_mv = ytd_mv = 0
     for s in stocks:
         tk = s['ticker']
         shares = s.get('total_shares_raw', s.get('total_shares', 0))
         if isinstance(shares, str):
             shares = float(shares.replace(',', ''))
+        # Convert historical prices from market-native to primary currency
+        mkt = s.get('market', 'US')
+        native_cur = get_market_native_currency(mkt)
+        native_to_prim = fx_matrix.get(native_cur, {}).get(prim_cur, 1.0)
         for label, date_str in [('yesterday', yesterday), ('wtd', wtd_date), ('mtd', mtd_date), ('ytd', ytd_date)]:
             hp = hist_prices.get(tk, {}).get(label)
             if hp:
-                mv_contrib = hp * float(shares)
+                mv_contrib = hp * native_to_prim * float(shares)
                 if label == 'yesterday': yesterday_mv += mv_contrib
                 elif label == 'wtd': wtd_mv += mv_contrib
                 elif label == 'mtd': mtd_mv += mv_contrib
@@ -918,14 +1029,28 @@ def _render_dashboard():
                             <input type="number" step="0.01" name="cash_balance" id="settings-cash-balance" value="{{ config.cash_balance }}" min="0" class="w-40 bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-mono">
                         </div>
                         <div>
-                            <label class="block text-slate-400 font-bold mb-1" for="settings-currency">{{ t.settings_currency }}</label>
+                            <label class="block text-slate-400 font-bold mb-1" for="settings-primary-currency">{{ t.settings_primary_currency }}</label>
+                            <select name="primary_currency" id="settings-primary-currency" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-bold">
+                                <option value="USD" {% if config.primary_currency == 'USD' %}selected{% endif %}>$ USD</option>
+                                <option value="HKD" {% if config.primary_currency == 'HKD' %}selected{% endif %}>$ HKD</option>
+                                <option value="TWD" {% if config.primary_currency == 'TWD' %}selected{% endif %}>$ TWD</option>
+                                <option value="CNY" {% if config.primary_currency == 'CNY' %}selected{% endif %}>¥ CNY</option>
+                                <option value="JPY" {% if config.primary_currency == 'JPY' %}selected{% endif %}>¥ JPY</option>
+                                <option value="EUR" {% if config.primary_currency == 'EUR' %}selected{% endif %}>€ EUR</option>
+                                <option value="GBP" {% if config.primary_currency == 'GBP' %}selected{% endif %}>£ GBP</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-slate-400 font-bold mb-1" for="settings-currency">{{ t.settings_secondary_currency }}</label>
                             <select name="secondary_currency" id="settings-currency" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-bold">
-                                <option value="HKD" {% if config.secondary_currency == 'HKD' %}selected{% endif %}>HKD 港幣</option>
-                                <option value="CNY" {% if config.secondary_currency == 'CNY' %}selected{% endif %}>CNY 人民幣</option>
-                                <option value="TWD" {% if config.secondary_currency == 'TWD' %}selected{% endif %}>TWD 新台幣</option>
-                                <option value="JPY" {% if config.secondary_currency == 'JPY' %}selected{% endif %}>JPY 日圓</option>
-                                <option value="EUR" {% if config.secondary_currency == 'EUR' %}selected{% endif %}>EUR 歐元</option>
-                                <option value="GBP" {% if config.secondary_currency == 'GBP' %}selected{% endif %}>GBP 英鎊</option>
+                                <option value="" {% if not config.secondary_currency %}selected{% endif %}>— None —</option>
+                                <option value="USD" {% if config.secondary_currency == 'USD' %}selected{% endif %}>$ USD</option>
+                                <option value="HKD" {% if config.secondary_currency == 'HKD' %}selected{% endif %}>$ HKD</option>
+                                <option value="TWD" {% if config.secondary_currency == 'TWD' %}selected{% endif %}>$ TWD</option>
+                                <option value="CNY" {% if config.secondary_currency == 'CNY' %}selected{% endif %}>¥ CNY</option>
+                                <option value="JPY" {% if config.secondary_currency == 'JPY' %}selected{% endif %}>¥ JPY</option>
+                                <option value="EUR" {% if config.secondary_currency == 'EUR' %}selected{% endif %}>€ EUR</option>
+                                <option value="GBP" {% if config.secondary_currency == 'GBP' %}selected{% endif %}>£ GBP</option>
                             </select>
                         </div>
                     </div>
@@ -1056,14 +1181,14 @@ def _render_dashboard():
             <!-- 三大數據卡片 -->
             <div class="grid {% if is_pro %}grid-cols-3{% else %}grid-cols-2{% endif %} gap-6 mb-8">
                 <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl">
-                    <p class="text-slate-400 text-xs font-bold uppercase">{{ t.total_mv_label }} (USD / {{ sec_cur }})</p>
-                    <p id="top-total-mv-usd" class="text-3xl font-black text-cyan-400 mt-2">${{ "{:,.2f}".format(total_mv_usd) }}</p>
-                    <p id="top-total-mv-hkd" class="text-xs font-mono text-slate-500 mt-1">≈ {{ sec_cur }}${{ "{:,.2f}".format(total_mv_usd * usd_hkd) }}</p>
+                    <p class="text-slate-400 text-xs font-bold uppercase">{{ t.total_mv_label }} ({% if sec_cur %}{{ prim_cur }} / {{ sec_cur }}{% else %}{{ prim_cur }}{% endif %})</p>
+                    <p id="top-total-mv-primary" class="text-3xl font-black text-cyan-400 mt-2">{{ prim_symbol }}{{ "{:,.2f}".format(total_mv_primary) }}</p>
+                    {% if sec_cur %}<p id="top-total-mv-sec" class="text-xs font-mono text-slate-500 mt-1">≈ {{ sec_symbol }}{{ "{:,.2f}".format(total_mv_primary * prim_to_sec) }}</p>{% endif %}
                 </div>
                 <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl">
-                    <p class="text-slate-400 text-xs font-bold uppercase">{{ t.total_pnl_label }} (USD / {{ sec_cur }})</p>
-                    <p id="top-total-pnl-usd" class="text-3xl font-black mt-2 {% if total_pnl_usd >= 0 %}text-emerald-400{% else %}text-rose-500{% endif %}">${{ "{:+,.2f}".format(total_pnl_usd) }} <span class="text-xl font-medium">({{ total_roi_str }})</span></p>
-                    <p id="top-total-pnl-hkd" class="text-xs font-mono mt-1 {% if total_pnl_usd >= 0 %}text-emerald-500/80{% else %}text-rose-500/80{% endif %}">≈ {{ sec_cur }}${{ "{:+,.2f}".format(total_pnl_usd * usd_hkd) }}</p>
+                    <p class="text-slate-400 text-xs font-bold uppercase">{{ t.total_pnl_label }} ({% if sec_cur %}{{ prim_cur }} / {{ sec_cur }}{% else %}{{ prim_cur }}{% endif %})</p>
+                    <p id="top-total-pnl-primary" class="text-3xl font-black mt-2 {% if total_pnl_primary >= 0 %}text-emerald-400{% else %}text-rose-500{% endif %}">{{ prim_symbol }}{{ "{:+,.2f}".format(total_pnl_primary) }} <span class="text-xl font-medium">({{ total_roi_str }})</span></p>
+                    {% if sec_cur %}<p id="top-total-pnl-sec" class="text-xs font-mono mt-1 {% if total_pnl_primary >= 0 %}text-emerald-500/80{% else %}text-rose-500/80{% endif %}">≈ {{ sec_symbol }}{{ "{:+,.2f}".format(total_pnl_primary * prim_to_sec) }}</p>{% endif %}
                 </div>
 {% if is_pro %}
                 <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl">
@@ -1108,17 +1233,17 @@ def _render_dashboard():
                     <div class="flex justify-between items-center mb-1.5 text-sm">
                         <span class="text-slate-300 font-bold">{{ mkt }}</span>
                         <span class="text-slate-400 font-mono">${{ "{:,.0f}".format(mv) }}</span>
-                        <span class="text-cyan-400 font-mono text-xs">{{ "%.1f"|format(mv / total_mv_usd_raw * 100) if total_mv_usd_raw > 0 else 0 }}%</span>
+                        <span class="text-cyan-400 font-mono text-xs">{{ "%.1f"|format(mv / total_mv_primary_raw * 100) if total_mv_primary_raw > 0 else 0 }}%</span>
                     </div>
                     <div class="w-full bg-slate-800 rounded-full h-1.5 mb-2">
-                        <div class="bg-cyan-500 h-1.5 rounded-full" style="width: {{ "%.0f"|format(mv / total_mv_usd_raw * 100) if total_mv_usd_raw > 0 else 0 }}%"></div>
+                        <div class="bg-cyan-500 h-1.5 rounded-full" style="width: {{ "%.0f"|format(mv / total_mv_primary_raw * 100) if total_mv_primary_raw > 0 else 0 }}%"></div>
                     </div>
                     {% endfor %}
                 </div>
                 <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl flex flex-col justify-center items-center">
                     <p class="text-slate-400 text-xs font-bold uppercase mb-2">{{ t.card_cash_ratio }}</p>
-                    <p class="text-4xl font-black text-emerald-400">{{ "%.1f"|format(cash_balance / (total_mv_usd_raw + cash_balance) * 100) if (total_mv_usd_raw + cash_balance) > 0 else 0 }}%</p>
-                    <p class="text-slate-500 text-xs mt-1">${{ "{:,.0f}".format(cash_balance) }} / ${{ "{:,.0f}".format(total_mv_usd_raw + cash_balance) }}</p>
+                    <p class="text-4xl font-black text-emerald-400">{{ "%.1f"|format(cash_balance / (total_mv_primary_raw + cash_balance) * 100) if (total_mv_primary_raw + cash_balance) > 0 else 0 }}%</p>
+                    <p class="text-slate-500 text-xs mt-1">{{ prim_symbol }}{{ "{:,.0f}".format(cash_balance) }} / {{ prim_symbol }}{{ "{:,.0f}".format(total_mv_primary_raw + cash_balance) }}</p>
                 </div>
             </div>
             {% endif %}
@@ -1143,7 +1268,7 @@ def _render_dashboard():
                         <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5" for="buy-ticker">{{ t.ticker_label }}</label><input type="text" name="ticker" id="buy-ticker" placeholder="{{ t.buy_ticker_ph }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2 font-mono uppercase"></div>
                         <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5" for="buy-market">{{ t.market_label }}</label><select name="market" id="buy-market" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-bold"><option value="US">US</option><option value="HK">HK</option><option value="CN">CN</option><option value="TW">TW</option><option value="TWO">TWO</option></select></div>
                         <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5" for="buy-date">{{ t.date_label }}</label><input type="date" name="buy_date" id="buy-date" value="{{ today_date }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
-                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5" for="buy-price">{{ t.price_label }}</label><input type="number" step="0.0001" name="buy_price" id="buy-price" placeholder="{{ t.buy_price_ph }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
+                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5" for="buy-price" id="buy-price-label">{{ t.price_label }} (USD)</label><input type="number" step="0.0001" name="buy_price" id="buy-price" placeholder="{{ t.buy_price_ph }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
                         <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5" for="buy-shares">{{ t.shares_label }}</label><input type="number" name="buy_shares" id="buy-shares" placeholder="{{ t.buy_shares_ph }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
                         <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5" for="buy-commission">{{ t.commission_label }}</label><input type="number" step="0.01" name="buy_commission" id="buy-commission" value="0.00" class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
                         <button type="submit" class="col-span-2 py-2 bg-emerald-600 hover:bg-emerald-700 font-bold rounded">{{ t.buy_confirm }}</button>
@@ -1155,7 +1280,7 @@ def _render_dashboard():
                     <form id="sell-form" class="grid grid-cols-2 gap-3 text-xs" onsubmit="submitTrade(event, 'sell')">
                         <div class="col-span-2"><label class="block text-slate-500 text-[10px] font-bold mb-0.5" for="sell-ticker">{{ t.sell_ticker_label }}</label><select name="ticker" id="sell-ticker" required class="w-full bg-slate-950 border border-slate-800 rounded p-2 font-bold"><option value="">{{ t.sell_select_ticker }}</option>{% set ns = namespace(current_market='') %}{% for tk in open_tickers %}{% set m = ticker_market.get(tk, 'US') %}{% if m != ns.current_market %}{% if ns.current_market != '' %}</optgroup>{% endif %}<optgroup label="{{ m }}">{% set ns.current_market = m %}{% endif %}<option value="{{ tk }}">{{ tk }}</option>{% endfor %}</optgroup></select></div>
                         <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5" for="sell-date">{{ t.sell_date_label }}</label><input type="date" name="sell_date" id="sell-date" value="{{ today_date }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
-                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5" for="sell-price">{{ t.sell_price_label }}</label><input type="number" step="0.0001" name="sell_price" id="sell-price" placeholder="{{ t.sell_price_ph }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
+                        <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5" for="sell-price" id="sell-price-label">{{ t.sell_price_label }} (USD)</label><input type="number" step="0.0001" name="sell_price" id="sell-price" placeholder="{{ t.sell_price_ph }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
                         <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5" for="sell-shares">{{ t.sell_shares_label }}</label><input type="number" name="sell_shares" id="sell-shares" placeholder="{{ t.sell_shares_ph }}" required class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
                         <div><label class="block text-slate-500 text-[10px] font-bold mb-0.5" for="sell-commission">{{ t.sell_commission_label }}</label><input type="number" step="0.01" name="sell_commission" id="sell-commission" value="0.00" class="w-full bg-slate-950 border border-slate-800 rounded p-2"></div>
                         <button type="submit" class="col-span-2 py-2 bg-rose-600 hover:bg-rose-700 font-bold rounded">{{ t.sell_confirm }}</button>
@@ -1184,7 +1309,7 @@ def _render_dashboard():
                             <th class="px-4 py-4">{{ t.table_shares }}</th>
                             <th class="px-4 py-4">{{ t.table_avg_price }}</th>
                             <th class="px-4 py-4">{{ t.table_current_price }}</th>
-                            <th class="px-4 py-4">{{ t.table_stop_loss }}</th>
+                            <th class="px-4 py-4" title="{{ t.table_stop_loss_hint }}">{{ t.table_stop_loss }}</th>
                             <th class="px-4 py-4">{{ t.table_mv }}</th>
                             <th class="px-6 py-4 text-right">{{ t.table_pnl }}</th>
                             {% if is_pro %}<th class="px-4 py-4 text-right">{{ t.table_weight }}</th>{% endif %}
@@ -1213,11 +1338,11 @@ def _render_dashboard():
                             </td>
                             <td id="mv-{{ stock.ticker }}" class="px-4 py-4 font-mono font-bold">${{ stock.current_mv }}</td>
                             <td id="pnl-{{ stock.ticker }}" class="px-6 py-4 text-right font-mono font-bold {% if stock.praw >= 0 %}text-emerald-400{% else %}text-rose-500{% endif %}">
-                                {{ stock.pnl_usd_str }} ({{ stock.roi_str }})
+                                {{ stock.pnl_primary_str }} ({{ stock.roi_str }})
                             </td>
                             {% if is_pro %}
                             <td class="px-4 py-4 text-right font-mono text-slate-400 text-sm">
-                                {{ "%.1f"|format(stock.current_mv_raw / total_mv_usd_raw * 100) if total_mv_usd_raw > 0 and stock.current_mv_raw > 0 else "-" }}%
+                                {{ "%.1f"|format(stock.current_mv_raw / total_mv_primary_raw * 100) if total_mv_primary_raw > 0 and stock.current_mv_raw > 0 else "-" }}%
                             </td>
                             {% endif %}
                         </tr>
@@ -1369,8 +1494,8 @@ def _render_dashboard():
 {% if is_pro %}
                             checkTargetAlerts();
 {% endif %}                            if (!data.market_active) return;
-                            document.getElementById('top-total-mv-usd').innerText = '$' + data.total_mv_usd_str;
-                            document.getElementById('top-total-mv-hkd').innerText = '≈ ' + data.sec_cur + '$' + data.total_mv_sec_str;
+                            document.getElementById('top-total-mv-primary').innerText = data.prim_symbol + data.total_mv_primary_str;
+                            var secEl = document.getElementById('top-total-mv-sec'); if (secEl) { secEl.innerText = '≈ ' + data.sec_cur + data.total_mv_sec_str; }
                         }).catch(() => {});
                 }, intervalSec * 1000);
             }
@@ -1598,10 +1723,19 @@ def _render_dashboard():
                 });
             });
 
+            // Market-native currency labels
+            const CURR_LABELS = {US:'USD', HK:'HKD', CN:'CNY', TW:'TWD', TWO:'TWD'};
+            function updateBuyPriceLabel() {
+                const mkt = document.getElementById('buy-market').value;
+                const label = document.getElementById('buy-price-label');
+                if (label) label.textContent = '{{ t.price_label }} (' + (CURR_LABELS[mkt] || 'USD') + ')';
+            }
             window.onload = function() {
                 startHighFrequencyUpdater();
-                attachCostCalculator('#buy-form', 'input[type="number"]', 'buy-estimated-cost', '預計成本', 1);
-                attachCostCalculator('#sell-form', 'input[type="number"]', 'sell-estimated-cost', '預計收入', -1);
+                updateBuyPriceLabel();
+                document.getElementById('buy-market').addEventListener('change', updateBuyPriceLabel);
+                attachCostCalculator('#buy-form', 'input[type="number"]', 'buy-estimated-cost', '{{ t.buy_est_cost }}', 1);
+                attachCostCalculator('#sell-form', 'input[type="number"]', 'sell-estimated-cost', '{{ t.sell_est_income }}', -1);
             };
 
             // 🔄 AJAX trade submission + history delete
@@ -1664,17 +1798,20 @@ def _render_dashboard():
             }
         </script>
 
+    <div class="border-t border-slate-800 pt-3 mt-6 text-center"><p class="text-[10px] text-slate-500">{{ t.disclaimer }}</p></div>
+
     </body>
     </html>
     """, t=t, stocks=stocks, open_tickers=open_tickers, ticker_market=ticker_market,
-        total_mv_usd=total_mv_usd, total_open_cost=total_open_cost,
-        total_pnl_usd=total_pnl_usd, total_roi_str=total_roi_str,
-        usd_hkd=usd_hkd, sec_cur=sec_cur, watchlist_html=watchlist_html,
+        total_mv_primary=total_mv_primary, total_open_cost=total_open_cost,
+        total_pnl_primary=total_pnl_primary, total_roi_str=total_roi_str,
+        prim_cur=prim_cur, prim_symbol=prim_symbol, sec_cur=sec_cur, sec_symbol=sec_symbol, prim_to_sec=prim_to_sec,
+        watchlist_html=watchlist_html,
         targets_json=targets_json, markets_status=markets_status,
         active_markets=active_markets, version=VERSION, changelog=CHANGELOG,
         today_date=date_str, config=config, is_pro=get_is_pro(),
         perf=perf,
-        total_mv_usd_raw=total_mv_usd, total_open_cost_raw=total_open_cost,
+        total_mv_primary_raw=total_mv_primary, total_open_cost_raw=total_open_cost,
         cash_balance=config.get("cash_balance", 0))
 
 
@@ -1917,7 +2054,8 @@ def api_save_config():
         config["prompt_mode"] = request.form.get("prompt_mode", "style")
     config["language"] = request.form.get("language", "zh_tw")
     config["cash_balance"] = float(request.form.get("cash_balance", "0") or 0)
-    config["secondary_currency"] = request.form.get("secondary_currency", "HKD")
+    config["primary_currency"] = request.form.get("primary_currency", "USD")
+    config["secondary_currency"] = request.form.get("secondary_currency", "") or None
     save_config(config)
     return redirect(url_for('index'))
 
@@ -1940,20 +2078,20 @@ def api_ai_audit():
     if not api_key and provider not in local_providers:
         return jsonify({'success': False, 'error': 'Please configure your API Key.'})
     
-    stocks, _, _, total_mv_usd, total_open_cost_usd, usd_hkd, sec_cur = calculate_portfolio_matrix()
+    stocks, _, _, total_mv_primary, total_open_cost, prim_cur, prim_symbol, sec_cur, sec_symbol, prim_to_sec, fx_matrix = calculate_portfolio_matrix()
     open_stocks = [s for s in stocks if s['status'] == 'OPEN']
     if not open_stocks: return jsonify({'success': False, 'error': 'No open positions.'})
     
     # Build rich portfolio context
-    total_pnl = total_mv_usd - total_open_cost_usd
-    total_roi = (total_pnl / total_open_cost_usd * 100) if total_open_cost_usd > 0 else 0
+    total_pnl = total_mv_primary - total_open_cost
+    total_roi = (total_pnl / total_open_cost * 100) if total_open_cost > 0 else 0
     
     # Market allocation
     market_mv = {}
     for s in open_stocks:
         mkt = s['market']
         market_mv[mkt] = market_mv.get(mkt, 0) + float(s.get('current_mv', '0').replace(',', '') or '0')
-    alloc_lines = [f"  {m}: ${v:,.2f} ({v/total_mv_usd*100:.1f}%)" for m, v in sorted(market_mv.items(), key=lambda x: -x[1]) if total_mv_usd > 0]
+    alloc_lines = [f"  {m}: {prim_symbol}{v:,.2f} ({v/total_mv_primary*100:.1f}%)" for m, v in sorted(market_mv.items(), key=lambda x: -x[1]) if total_mv_primary > 0]
     
     holding_lines = []
     for s in open_stocks:
@@ -1961,15 +2099,15 @@ def api_ai_audit():
         holding_lines.append(
             f"${s['ticker']} [{s['market']}] | Shares: {s['total_shares']} | "
             f"Avg Cost: ${s['avg_buy_price']} | Current: ${s['current_price']} | "
-            f"P&L: {s['pnl_usd_str']} | ROI: {s['roi_str']}{danger}"
+            f"P&L: {s['pnl_primary_str']} | ROI: {s['roi_str']}{danger}"
         )
     
     lang_map = {"zh_tw": "Traditional Chinese (繁體中文)", "zh_cn": "Simplified Chinese (簡體中文)", "en": "English"}
     lang = lang_map.get(config.get("language", "zh_tw"), "Traditional Chinese (繁體中文)")
 
     # Build summary strings for prompt templates
-    summary_str = f"Total MV: ${total_mv_usd:,.2f}, Cost: ${total_open_cost_usd:,.2f}, PnL: ${total_pnl:+,.2f} ({total_roi:+.2f}%), Holdings: {len(open_stocks)}"
-    holdings_str = "; ".join([f"${s['ticker']} [{s['market']}] Shs:{s['total_shares']} Cost:${s['avg_buy_price']} Now:${s['current_price']} PnL:{s['pnl_usd_str']} ROI:{s['roi_str']}" for s in open_stocks])
+    summary_str = f"Total MV: {prim_symbol}{total_mv_primary:,.2f}, Cost: {prim_symbol}{total_open_cost:,.2f}, PnL: {prim_symbol}{total_pnl:+,.2f} ({total_roi:+.2f}%), Holdings: {len(open_stocks)}"
+    holdings_str = "; ".join([f"{prim_symbol}{s['ticker']} [{s['market']}] Shs:{s['total_shares']} Cost:{prim_symbol}{s['avg_buy_price']} Now:{prim_symbol}{s['current_price']} PnL:{s['pnl_primary_str']} ROI:{s['roi_str']}" for s in open_stocks])
     alloc_str = "; ".join(alloc_lines) if alloc_lines else "N/A"
 
     custom = config.get("custom_prompt", "").strip()
@@ -1987,7 +2125,7 @@ def api_ai_audit():
     elif level == "relaxed":
         prompt_text = f"You are an optimistic growth-focused portfolio coach. Highlight strengths and future potential. Suggest adding to winners. Report in {lang}. Use markdown.\n\nPortfolio Summary: {summary_str}\nAllocation: {alloc_str}\n\nHoldings:\n{chr(10).join(holding_lines)}\n\nRequired Sections:\n1. Growth Outlook — Market trends and tailwinds benefiting the portfolio\n2. Strength Analysis — What each holding is doing RIGHT\n3. Opportunity Spotting — Undervalued positions, add-more candidates\n4. Portfolio Expansion — New sectors or themes to consider\n\nBe encouraging. Focus on upside."
     else:  # balanced (default)
-        prompt_text = f"You are a professional portfolio analyst. Provide a comprehensive portfolio analysis report in {lang}. Use markdown formatting with clear section headers.\n\n## Portfolio Overview\n- Total Market Value: ${total_mv_usd:,.2f} USD\n- Total Cost Basis: ${total_open_cost_usd:,.2f} USD\n- Total P&L: ${total_pnl:+,.2f} USD ({total_roi:+.2f}%)\n- Number of Holdings: {len(open_stocks)}\n\n## Market Allocation\n{chr(10).join(alloc_lines) if alloc_lines else '  N/A'}\n\n## Holdings Detail\n{chr(10).join(holding_lines)}\n\n## Required Analysis Sections\n1. Overall Assessment\n2. Per-Stock Analysis\n3. Risk Alerts\n4. Actionable Suggestions\n\nKeep it concise. Use a summary table."
+        prompt_text = f"You are a professional portfolio analyst. Provide a comprehensive portfolio analysis report in {lang}. Use markdown formatting with clear section headers.\n\n## Portfolio Overview\n- Total Market Value: {prim_symbol}{total_mv_primary:,.2f} {prim_cur}\n- Total Cost Basis: {prim_symbol}{total_open_cost:,.2f} {prim_cur}\n- Total P&L: {prim_symbol}{total_pnl:+,.2f} {prim_cur} ({total_roi:+.2f}%)\n- Number of Holdings: {len(open_stocks)}\n\n## Market Allocation\n{chr(10).join(alloc_lines) if alloc_lines else '  N/A'}\n\n## Holdings Detail\n{chr(10).join(holding_lines)}\n\n## Required Analysis Sections\n1. Overall Assessment\n2. Per-Stock Analysis\n3. Risk Alerts\n4. Actionable Suggestions\n\nKeep it concise. Use a summary table."
     try:
         if provider == "gemini":
             if not base_url.endswith('/'): base_url += '/'
@@ -2014,10 +2152,10 @@ def api_ai_audit():
 @app.route('/api/portfolio/realtime_feed')
 def api_portfolio_realtime_feed():
     if not check_any_market_active(): return jsonify({'market_active': False})
-    stocks, _, _, total_mv_usd, total_open_cost, usd_hkd, _ = calculate_portfolio_matrix()
+    stocks, _, _, total_mv_primary, total_open_cost, prim_cur, prim_symbol, sec_cur, sec_symbol, prim_to_sec, fx_matrix = calculate_portfolio_matrix()
     config = load_config()
     sec_cur = config.get('secondary_currency', 'HKD')
-    return jsonify({'market_active': True, 'total_mv_usd_str': f"{total_mv_usd:,.2f}", 'total_mv_sec_str': f"{(total_mv_usd * usd_hkd):,.2f}", 'sec_cur': sec_cur})
+    return jsonify({'market_active': True, 'total_mv_primary_str': f"{total_mv_primary:,.2f}", 'total_mv_sec_str': f"{(total_mv_primary * prim_to_sec):,.2f}", 'prim_cur': prim_cur, 'prim_symbol': prim_symbol, 'sec_cur': sec_cur})
 
 @app.route('/api/portfolio/buy', methods=['POST'])
 def api_portfolio_buy():
