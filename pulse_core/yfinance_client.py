@@ -132,13 +132,6 @@ def fetch_atr_20(ticker: str) -> float:
 
 
 # ----- Forex -----
-def get_fx_rate(currency: str) -> Optional[float]:
-    rate_data = get_realtime_data(f"{currency}=X")
-    return rate_data["price"] if rate_data["price"] > 0 else None
-
-
-def get_usd_hkd_rate() -> float:
-    return get_fx_rate("HKD") or 7.80
 
 
 # ----- Background Poller (cloud mode) -----
@@ -205,3 +198,67 @@ def get_historical_prices(tickers, dates):
 
 def stop_background_poller():
     _poller_stop.set()
+
+
+# ==================== 💱 FX Matrix (Multi-Currency) ====================
+CURRENCY_SYMBOLS = {"USD": "$", "HKD": "$", "TWD": "$", "CNY": "¥", "JPY": "¥", "EUR": "€", "GBP": "£"}
+CURRENCY_MAP = {"USD": "USD=X", "HKD": "HKD=X", "TWD": "TWD=X", "CNY": "CNY=X", "JPY": "JPY=X", "EUR": "EUR=X", "GBP": "GBP=X"}
+FX_CACHE = {}
+FX_CACHE_TTL = 300
+
+def get_fx_rate(currency):
+    """Get USD→currency rate. Returns float or None."""
+    if currency == "USD":
+        return 1.0
+    now = datetime.now()
+    cached = FX_CACHE.get(currency)
+    if cached and (now - cached["ts"]).total_seconds() < FX_CACHE_TTL:
+        return cached["rate"]
+    try:
+        ticker = CURRENCY_MAP.get(currency, f"{currency}=X")
+        t = yf.Ticker(ticker)
+        info = t.fast_info
+        rate = getattr(info, 'last_price', None) or getattr(info, 'regular_market_previous_close', None) or 0.0
+        if rate and rate > 0:
+            FX_CACHE[currency] = {"rate": float(rate), "ts": now}
+            return float(rate)
+    except Exception:
+        pass
+    rt = get_realtime_data(f"{currency}=X")
+    if rt['price'] > 0:
+        FX_CACHE[currency] = {"rate": rt['price'], "ts": now}
+        return rt['price']
+    return None
+
+def get_fx_matrix():
+    """Build cross-rate dict: {from_cur: {to_cur: rate}}."""
+    currencies = ["USD", "HKD", "TWD", "CNY", "JPY", "EUR", "GBP"]
+    rates = {}
+    for cur in currencies:
+        r = get_fx_rate(cur)
+        if r and r > 0:
+            rates[cur] = r
+    defaults = {"HKD": 7.80, "TWD": 32.5, "CNY": 7.25, "USD": 1.0, "JPY": 150.0, "EUR": 0.92, "GBP": 0.79}
+    for cur in currencies:
+        if cur not in rates:
+            rates[cur] = defaults.get(cur, 1.0)
+    matrix = {"rates": rates}
+    for src in currencies:
+        matrix[src] = {}
+        for dst in currencies:
+            if rates[dst] > 0:
+                matrix[src][dst] = rates[dst] / rates[src]
+    return matrix
+
+def convert_currency(amount, from_cur, to_cur, fx_matrix=None):
+    """Convert amount between currencies."""
+    if from_cur == to_cur:
+        return float(amount)
+    if fx_matrix is None:
+        fx_matrix = get_fx_matrix()
+    rate = fx_matrix.get(from_cur, {}).get(to_cur, 1.0)
+    return float(amount) * rate
+
+def get_currency_symbol(cur):
+    """Return symbol for a currency code."""
+    return CURRENCY_SYMBOLS.get(cur, "$")

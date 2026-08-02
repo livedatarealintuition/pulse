@@ -15,6 +15,12 @@ MARKETS = {
 
 MARKET_ORDER = {"US": 0, "HK": 1, "CN": 2, "TW": 3, "TWO": 4}
 
+NATIVE_CURRENCY = {"US": "USD", "HK": "HKD", "CN": "CNY", "TW": "TWD", "TWO": "TWD"}
+
+def get_market_native_currency(market: str) -> str:
+    """Return native currency for a market code."""
+    return NATIVE_CURRENCY.get(market, "USD")
+
 
 def is_market_open(key: str) -> bool:
     m = MARKETS.get(key)
