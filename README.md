@@ -4,20 +4,9 @@
 
 A lightweight, self-hosted multi-market portfolio dashboard. Track your stock holdings across US, HK, CN, TW, and TWO markets with real-time prices, P&L analytics, and a drag-and-drop watchlist — all in a single Python file.
 
+![Version](https://img.shields.io/badge/version-V1.866-blue)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 ![Python: 3.9+](https://img.shields.io/badge/python-3.9+-blue)
-
----
-
-## Screenshots
-
-| Dashboard | Watchlist |
-|:---------:|:---------:|
-| ![Pulse Dashboard](screenshots/dashboard.png) | ![Watchlist](screenshots/watchlist.png) |
-
-| Settings | Multi-Currency |
-|:--------:|:--------------:|
-| ![Settings](screenshots/settings.png) | ![Currency](screenshots/currency.png) |
 
 ---
 
@@ -36,33 +25,41 @@ A lightweight, self-hosted multi-market portfolio dashboard. Track your stock ho
 - Market filter tabs: All / US / HK / CN / TW / TWO
 - Click-to-expand transaction history per stock
 - Capital recovery tracker (💰 badge when realized profit ≥ total cost)
+- Performance cards: Today / WTD / MTD / YTD returns
 
 ### Multi-Currency
 - Secondary currency display: HKD / CNY / TWD / JPY / EUR / GBP
-- Real-time exchange rates
+- Real-time exchange rates via Yahoo Finance
 
 ### Watchlist
 - Slide-out sidebar with category-based organization
 - Category CRUD: create, rename, delete groups
 - Ticker CRUD: add/remove tickers per category
 - HTML5 drag-and-drop category reordering
+- Target price alerts (🎯) with real-time DOM-based checking
 
 ### i18n
 - Three languages: 繁體中文 / 简体中文 / English
 - Dynamic switching, no reload needed
 
 ### Performance
-- TTL cache (30s during market hours, auto-extends to 4h when closed)
+- TTL cache (30s during market hours, auto-extends when closed)
 - Atomic JSON writes (threading.Lock + os.replace)
 - Configurable refresh interval (10s–∞, default 30s)
 
-### Pro Upgrade 🚧 Coming Soon
-Pulse will have a **Pro tier** with additional features (currently in development):
-- ⚡ AI audit reports (portfolio health analysis)
-- 🎯 Target price alerts
-- AI provider/model configuration
+### Pro Features ⭐ (Docker/Windows only)
+- 🤖 AI Portfolio Audit — Connect your own API key (Gemini, DeepSeek, OpenAI, Ollama, vLLM)
+- 📝 Custom AI Prompts — Three analysis styles built in, or write your own
+- 📊 Advanced Analytics — Market distribution, cash ratio, position weight%
+- 🎯 Target Price Alerts — Set and track price targets per ticker
 
-Stay tuned — these features are actively being built.
+### Pro Roadmap 🚧 In Development
+1. 🖼️ Custom Background — Upload your own dashboard background
+2. 📰 Stock News — Per-ticker news feed
+3. 📱 Mobile Mode — Responsive layout
+4. 🤖 AI News Analysis — LLM sentiment + risk summaries
+5. 🗂️ Multi-Portfolio — Multiple portfolios, one-click switching
+6. 🔌 Custom Data Sources — Finnhub, Tiingo, or any API
 
 ---
 
@@ -109,9 +106,8 @@ curl -sL https://github.com/tailwindlabs/tailwindcss/releases/latest/download/ta
 chmod +x tailwindcss
 
 # 2. Extract classes from Python source
-grep -oP 'class="\K[^"]+' pulse_free.py | tr ' ' '
-' | sort -u | grep -v '[{{%]' > /tmp/classes.txt
-python3 -c "print('<div class="' + ' '.join(open('/tmp/classes.txt').read().split()) + '"></div>')" > pulse_classes.html
+grep -oP 'class="\K[^"]+' pulse_free.py | tr ' ' '\n' | sort -u | grep -v '[{{%]' > /tmp/classes.txt
+python3 -c "print('<div class=\"' + ' '.join(open('/tmp/classes.txt').read().split()) + '\"></div>')" > pulse_classes.html
 
 # 3. Build
 echo '@import "tailwindcss";' > input.css
@@ -124,7 +120,8 @@ rm input.css pulse_classes.html
 ### Production
 
 ```bash
-PULSE_HOME=/data/pulse nohup python3 pulse_free.py > /tmp/pulse.log 2>&1 &
+export PULSE_HOME=/data/pulse
+nohup python3 pulse_free.py > /tmp/pulse.log 2>&1 &
 ```
 
 ---
@@ -143,7 +140,7 @@ PULSE_HOME=/data/pulse nohup python3 pulse_free.py > /tmp/pulse.log 2>&1 &
 pulse/
 ├── pulse_free.py              # Main application (Free version)
 ├── pulse.css                  # Pre-built Tailwind CSS (production)
-├── pulse_logo.png             # Brand logo
+├── pulse_logo.jpg             # Brand logo (1890×1890)
 ├── requirements.txt           # Python dependencies
 ├── system_config.example.json # Config template
 ├── README.md
@@ -176,8 +173,6 @@ system_config.json      # Your settings/keys — NOT committed
 
 MIT — see [LICENSE](LICENSE) file.
 
----
-
 ## Privacy — 100% Local Data Privacy
 
 Pulse runs entirely on your machine. **No data ever leaves your server.**
@@ -187,9 +182,3 @@ Pulse runs entirely on your machine. **No data ever leaves your server.**
 - The only external requests are to Yahoo Finance (stock prices) and exchange rate APIs
 - No accounts, no cloud sync, no third-party data sharing
 - You own your data — always
-
----
-
-## Pro Version 🚧 Coming Soon
-
-Pulse Pro (AI-powered portfolio analysis, target price alerts, AI backend configuration) is currently in development. Stay tuned for release.
