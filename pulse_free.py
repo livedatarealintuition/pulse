@@ -1730,10 +1730,20 @@ def _render_dashboard():
                 const label = document.getElementById('buy-price-label');
                 if (label) label.textContent = '{{ t.price_label }} (' + (CURR_LABELS[mkt] || 'USD') + ')';
             }
+            function updateSellPriceLabel() {
+                const sel = document.getElementById('sell-ticker');
+                if (!sel) return;
+                const opt = sel.options[sel.selectedIndex];
+                const mkt = opt && opt.parentElement.label ? opt.parentElement.label : 'USD';
+                const label = document.getElementById('sell-price-label');
+                if (label) label.textContent = '{{ t.sell_price_label }} (' + (CURR_LABELS[mkt] || mkt) + ')';
+            }
             window.onload = function() {
                 startHighFrequencyUpdater();
                 updateBuyPriceLabel();
+                updateSellPriceLabel();
                 document.getElementById('buy-market').addEventListener('change', updateBuyPriceLabel);
+                document.getElementById('sell-ticker').addEventListener('change', updateSellPriceLabel);
                 attachCostCalculator('#buy-form', 'input[type="number"]', 'buy-estimated-cost', '{{ t.buy_est_cost }}', 1);
                 attachCostCalculator('#sell-form', 'input[type="number"]', 'sell-estimated-cost', '{{ t.sell_est_income }}', -1);
             };
