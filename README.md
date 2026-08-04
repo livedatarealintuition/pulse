@@ -29,14 +29,13 @@ A lightweight, self-hosted multi-market portfolio dashboard. Track your stock ho
 
 ### Multi-Currency
 - Secondary currency display: HKD / CNY / TWD / JPY / EUR / GBP
-- Real-time exchange rates via Yahoo Finance
+- Real-time exchange rates via YFinance
 
 ### Watchlist
 - Slide-out sidebar with category-based organization
 - Category CRUD: create, rename, delete groups
 - Ticker CRUD: add/remove tickers per category
 - HTML5 drag-and-drop category reordering
-- Target price alerts (🎯) with real-time DOM-based checking
 
 ### i18n
 - Three languages: 繁體中文 / 简体中文 / English
