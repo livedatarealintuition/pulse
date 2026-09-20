@@ -2,182 +2,176 @@
 
 **Live Data · Real Intuition**
 
-A lightweight, self-hosted multi-market portfolio dashboard. Track your stock holdings across US, HK, CN, TW, and TWO markets with real-time prices, P&L analytics, and a drag-and-drop watchlist — all in a single Python file.
+A lightweight, **self-hosted** portfolio dashboard for the **US, Hong Kong, Mainland China and Taiwan** markets — live prices, P&L, watchlist, market indices, FX rates, earnings dates and risk metrics, from a single Python service you run yourself.
 
-![Version](https://img.shields.io/badge/version-V1.866-blue)
+No account. No cloud. No broker credentials. Your holdings live in a JSON file on your own machine.
+
+![Version](https://img.shields.io/badge/version-V1.14.0-blue)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 ![Python: 3.9+](https://img.shields.io/badge/python-3.9+-blue)
 
----
+![Pulse dashboard](screenshots/01-dashboard-top.png)
 
-## Features
+**Live demo** (the hosted build, sample data, nothing to install): <https://pulsehk.net/demo>
 
-### Multi-Market Portfolio
-- Real-time prices across **US / HK / CN (.SS/.SZ) / TW / TWO** markets
-- Batch fetching via yfinance — one API call for all tickers
-- Total market value, P&L, ROI, per-stock breakdown
-- Buy/sell trade management with commission tracking
-- AJAX trading — no page refresh
-- Auto zero-padding for HK (4-digit) and CN (6-digit) ticker codes
+## Quick start
 
-### Visual Dashboard
-- Market status indicator dots (green = open, red = closed) with zoneinfo timezone
-- Market filter tabs: All / US / HK / CN / TW / TWO
-- Click-to-expand transaction history per stock
-- Capital recovery tracker (💰 badge when realized profit ≥ total cost)
-- Performance cards: Today / WTD / MTD / YTD returns
+### Docker (recommended)
 
-### Multi-Currency
-- Secondary currency display: HKD / CNY / TWD / JPY / EUR / GBP
-- Real-time exchange rates via YFinance
+```bash
+docker compose up -d          # → http://localhost:5000
+```
 
-### Watchlist
-- Slide-out sidebar with category-based organization
-- Category CRUD: create, rename, delete groups
-- Ticker CRUD: add/remove tickers per category
-- HTML5 drag-and-drop category reordering
+Or without compose:
 
-### i18n
-- Three languages: 繁體中文 / 简体中文 / English
-- Dynamic switching, no reload needed
+```bash
+docker build -t pulse .
+docker run -d --name pulse -p 5000:5000 -v pulse-data:/data pulse
+```
 
-### Performance
-- TTL cache (30s during market hours, auto-extends when closed)
-- Atomic JSON writes (threading.Lock + os.replace)
-- Configurable refresh interval (10s–∞, default 30s)
+Your data lives in the `pulse-data` volume, so rebuilding the image never touches it.
 
-### Pro Features ⭐ (Docker/Windows only)
-- 🤖 AI Portfolio Audit — Connect your own API key (Gemini, DeepSeek, OpenAI, Ollama, vLLM)
-- 📝 Custom AI Prompts — Three analysis styles built in, or write your own
-- 📊 Advanced Analytics — Market distribution, cash ratio, position weight%
-- 🎯 Target Price Alerts — Set and track price targets per ticker
-
-### Pro Roadmap 🚧 In Development
-1. 🖼️ Custom Background — Upload your own dashboard background
-2. 📰 Stock News — Per-ticker news feed
-3. 📱 Mobile Mode — Responsive layout
-4. 🤖 AI News Analysis — LLM sentiment + risk summaries
-5. 🗂️ Multi-Portfolio — Multiple portfolios, one-click switching
-6. 🔌 Custom Data Sources — Finnhub, Tiingo, or any API
-
----
-
-## Quick Start
-
-### Requirements
-- Python 3.9+
-- Linux / macOS / WSL
-
-### Install
+### Python
 
 ```bash
 git clone https://github.com/livedatarealintuition/pulse.git
 cd pulse
+python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
+python pulse_free.py          # → http://localhost:5000
 ```
 
-### Configure
+Python 3.9+ (the app uses `zoneinfo`). Runs on Linux, macOS and Windows, and is happy on a Raspberry Pi / ARM SBC.
 
-```bash
-cp system_config.example.json system_config.json
-```
+## Screenshots
 
-### Run
+| Holdings and P&L | Watchlist sidebar |
+|:---:|:---:|
+| ![Holdings](screenshots/02-holdings.png) | ![Watchlist](screenshots/03-watchlist.png) |
 
-```bash
-# Default: data files stored next to the script
-python3 pulse_free.py
+| Traditional Chinese UI |  |
+|:---:|:---:|
+| ![zh_tw](screenshots/05-dashboard-zh.png) |  |
 
-# Or set a custom data directory
-export PULSE_HOME=/path/to/your/data
-python3 pulse_free.py
-```
+The complete dashboard is in [`screenshots/04-dashboard-full.png`](screenshots/04-dashboard-full.png). Screenshots use sample data, not real holdings.
 
-Open `http://localhost:5000` in your browser.
+## Features
 
-### Rebuild CSS (optional)
+### Markets and prices
+- **US / HK / CN (SS & SZ) / TW / TWO** tickers in one portfolio
+- Automatic padding and suffixes: `700` + HK → `0700.HK`, `2330` + TW → `2330.TW`, `600519` + CN → `600519.SS`
+- Batch quotes via yfinance with a TTL cache (30 s while a market is open, 4 h once everything closes)
+- Market-status dots and per-market filter tabs (All / US / HK / CN / TW / TWO)
+- Prices shown in your primary currency, whatever market they trade in
 
-`pulse.css` is pre-built and committed. To regenerate after changing Tailwind classes:
+### Portfolio
+- BUY / SELL history per ticker, commissions included
+- Average cost, market value, unrealised P&L and ROI per position
+- Capital-recovery badge once realised profit covers the position cost
+- A position sold down to zero becomes CLOSED — the row and its full history stay
+- Click any row to expand every BUY/SELL for that ticker
 
-```bash
-# 1. Install Tailwind CLI (one-time)
-curl -sL https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-linux-x64 -o tailwindcss
-chmod +x tailwindcss
+### Watchlist
+- Slide-out sidebar with categories and drag-and-drop ordering
+- Add tickers with a market selector; the server appends the correct suffix
+- Optional target price per ticker, with an alert card when the target is hit
+- Add / rename / delete without a page reload (AJAX fragment)
 
-# 2. Extract classes from Python source
-grep -oP 'class="\K[^"]+' pulse_free.py | tr ' ' '\n' | sort -u | grep -v '[{{%]' > /tmp/classes.txt
-python3 -c "print('<div class=\"' + ' '.join(open('/tmp/classes.txt').read().split()) + '\"></div>')" > pulse_classes.html
+### Analysis cards
+- **Performance** — Today / WTD / MTD / YTD from historical closes
+- **Indices ticker** — top bar, up to 5 of 13 indices (S&P 500, Hang Seng, Shanghai, TAIEX, TPEx, NASDAQ, Dow, SOX, Nikkei …) plus an FX row
+- **Earnings calendar** — upcoming earnings for every ticker you hold (30-day lookahead)
+- **ATR-20 trailing stop** column, in your primary currency
+- **Pro** (see below): risk metrics, weight %, market distribution, cash ratio, AI audit, custom background
 
-# 3. Build
-echo '@import "tailwindcss";' > input.css
-./tailwindcss --input input.css --output pulse.css --minify
+### Multi-currency
+- Primary currency: USD / HKD / TWD / CNY / JPY / EUR / GBP
+- Optional secondary display currency with its own FX row
+- Cross-rate matrix, and buy/sell price labels that follow the ticker's market
 
-# 4. Clean up
-rm input.css pulse_classes.html
-```
+### Interface
+- English / 繁體中文 / 简体中文 (UI *and* AI report language)
+- Dark theme, responsive layout, plus a dedicated `/mobile` view
+- Import / export portfolio and watchlist as JSON
+- Optional AI audit with DeepSeek, OpenAI, Gemini, or any local OpenAI-compatible server (Ollama / vLLM / LM Studio)
 
-### Production
+## Free and Pro (self-hosted)
 
-```bash
-export PULSE_HOME=/data/pulse
-nohup python3 pulse_free.py > /tmp/pulse.log 2>&1 &
-```
+The open-source build in this repository is the **Free** edition: everything above except the items marked Pro. Pro is gated in the source by a single `IS_PRO` constant, so you can read exactly what it adds:
 
----
+- Risk metrics card — Sharpe, Sortino, volatility, max drawdown, VaR-95; historical / parametric / Monte Carlo methods over 90 days – 5 years
+- Weight % column, market distribution card, cash ratio card
+- AI audit report with editable prompt (Strict / Balanced / Relaxed plus custom prompt variables)
+- Target price alerts and a custom background image
 
-## Environment Variables
+## Data and privacy
 
-| Variable | Purpose | Default |
-|----------|---------|---------|
-| `PULSE_HOME` | Directory for `portfolio.json`, `watchlist.json`, `system_config.json` | Script directory |
+- Everything is local: `portfolio.json`, `watchlist.json` and `system_config.json` sit next to the app (or in `$PULSE_HOME`)
+- No telemetry, no analytics, no account, no cloud sync
+- Outbound requests go only to Yahoo Finance (prices, FX, earnings) and to the AI provider **you** configure
+- **There is no login.** Keep it on your LAN, or put it behind a reverse proxy with authentication if you expose it
 
----
+## Configuration
 
-## File Structure
+| Environment variable | Purpose | Default |
+|---|---|---|
+| `PULSE_HOME` | Directory holding `portfolio.json`, `watchlist.json`, `system_config.json` and `uploads/` | the script's directory |
+
+Settings (⚙️) covers language, refresh interval, currencies, cash balance, indices, risk-metric options, and the AI provider / model / URL / key / timeout. `system_config.example.json` shows the on-disk format.
+
+> Note: when `PULSE_HOME` is set the app also looks for `pulse.css` and `pulse_logo.jpg` in that directory — the container entrypoint copies them there for you.
+
+## Markets supported
+
+| Market | Ticker format | Example |
+|---|---|---|
+| US | plain | `AAPL`, `MSFT` |
+| Hong Kong | `.HK` | `0005.HK`, `0700.HK` |
+| Shanghai | `.SS` | `600519.SS` |
+| Shenzhen | `.SZ` | `000001.SZ` |
+| Taiwan | `.TW` | `2330.TW` |
+| Taiwan OTC | `.TWO` | `6488.TWO` |
+
+## Project layout
 
 ```
 pulse/
-├── pulse_free.py              # Main application (Free version)
-├── pulse.css                  # Pre-built Tailwind CSS (production)
-├── pulse_logo.jpg             # Brand logo (1890×1890)
-├── requirements.txt           # Python dependencies
-├── system_config.example.json # Config template
-├── README.md
-└── .gitignore
+├── pulse_free.py              # the whole app (Flask, dashboard template included inline)
+├── risk_metrics.py            # risk-metric maths (numpy)
+├── pulse.css                  # pre-built Tailwind CSS
+├── pulse_logo.jpg
+├── Dockerfile, docker-compose.yml, docker-entrypoint.sh
+├── requirements.txt
+├── check_translations.py      # dev helper: verify i18n keys across languages
+├── system_config.example.json
+└── screenshots/
 ```
 
-Data files (gitignored):
+Runtime files (git-ignored): `portfolio.json`, `watchlist.json`, `system_config.json`, `uploads/`.
+
+### Rebuilding the CSS (optional)
+
+`pulse.css` is pre-built and committed. After changing Tailwind classes:
+
+```bash
+curl -sL https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-linux-x64 -o tailwindcss
+chmod +x tailwindcss
+grep -oP 'class="\K[^"]+' pulse_free.py | tr ' ' '\n' | sort -u > /tmp/classes.txt
+python3 -c "print('<div class=\"' + ' '.join(open('/tmp/classes.txt').read().split()) + '\"></div>')" > pulse_classes.html
+echo '@import "tailwindcss";' > input.css
+./tailwindcss --input input.css --output pulse.css --minify
+rm input.css pulse_classes.html
 ```
-portfolio.json          # Your holdings — NOT committed
-watchlist.json          # Your watchlist — NOT committed
-system_config.json      # Your settings/keys — NOT committed
-```
 
----
+## Limitations
 
-## Markets Supported
-
-| Market | Ticker Format | Status Dot |
-|--------|--------------|------------|
-| US | `AAPL` | ● US |
-| Hong Kong | `0005.HK` | ● HK |
-| Shanghai | `600036.SS` | ● CN |
-| Shenzhen | `000001.SZ` | ● CN |
-| Taiwan | `2330.TW` | ● TW |
-| Taiwan OTC | `6488.TWO` | ● TWO |
-
----
+- **Manual entry.** There is no broker or bank sync — you add your own trades (JSON import/export is the escape hatch).
+- Prices, FX and earnings come from Yahoo Finance; a ticker Yahoo does not serve shows no price.
+- Single user by design; no multi-account support.
+- Informational only — not investment advice. Quotes can lag the market.
 
 ## License
 
-MIT — see [LICENSE](LICENSE) file.
+MIT — see [LICENSE](LICENSE).
 
-## Privacy — 100% Local Data Privacy
-
-Pulse runs entirely on your machine. **No data ever leaves your server.**
-
-- No telemetry, no analytics, no tracking
-- `portfolio.json`, `watchlist.json`, `system_config.json` stay on your disk
-- The only external requests are to Yahoo Finance (stock prices) and exchange rate APIs
-- No accounts, no cloud sync, no third-party data sharing
-- You own your data — always
+Pulse is not affiliated with Yahoo Finance. Market data is provided by Yahoo Finance for personal use; check their terms before relying on it for anything else.

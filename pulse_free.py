@@ -1,6 +1,7 @@
 import os
 import json
 import secrets
+import sys
 import requests
 from requests.exceptions import Timeout, ConnectionError as ReqConnectionError
 import time
@@ -9,6 +10,12 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from flask import Flask, render_template_string, request, redirect, url_for, jsonify, send_from_directory
 import yfinance as yf
+import numpy as np
+
+# 📉 Risk Metrics (Pro) — pure computation module (sibling file, no circular import)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from risk_metrics import (reconstruct_daily_values, compute_risk_metrics,
+                          RISK_METHODS, RISK_PERIODS, RISK_LONGEST_DAYS)
 
 app = Flask(__name__)
 
@@ -20,34 +27,42 @@ PORTFOLIO_JSON = os.path.join(BASE_DIR, "portfolio.json")
 WATCHLIST_JSON = os.path.join(BASE_DIR, "watchlist.json")  
 CONFIG_JSON = os.path.join(BASE_DIR, "system_config.json")
 
-VERSION = "V1.117"  # Session 10: Add JPY/EUR/GBP currency options
-IS_PRO = False  # 由 pulse_pro.py 覆蓋為 True
+VERSION = "V1.14.0"
+IS_PRO = False  # this public build is the Free edition; pulse_pro.py sets this to True (not in this repo)
 CHANGELOG = [
-    ("V1.117", "[Session 10] Add JPY/EUR/GBP to currency dropdowns + FX matrix"),
-    ("V1.116", "[Session 10] Fix: avg_buy_price converted to primary currency, ATR tooltip on column header"),
-    ("V1.115", "[Session 10] Fix: clear HIGHEST_PRICE_CACHE per-request to prevent cross-currency pollution"),
-    ("V1.114", "[Session 10] Fix: ATR stop-loss now converted to primary currency (was raw native)"),
-    ("V1.113", "[Session 10] Fix: Performance card historical prices now converted to primary currency"),
-    ("V1.112", "[Session 10] Fix: FX cross-rate formula inverted, buy price label JS DOM timing, clean HKD/TWD symbols"),
-    ("V1.111", "[Session 10] Multi-currency Phase 2: primary/secondary currency, market-native buy/sell labels, FX cross-rate matrix, all prices in primary currency"),
-    ("V1.101", "[Session 10] Financial disclaimer banner on all pages"),
-    ("V1.95", "[Session 9] Performance card: Today/WTD/MTD/YTD returns using historical prices"),
-    ("V1.94", "[Session 9] Watchlist multi-market support, JSON import/export (watchlist + portfolio)"),
-    ("V1.93", "[Session 9] Company names in ticker display, watchlist sidebar indicator, remove $ prefix"),
-    ("V1.92", "[Session 9] Remove CLOUD_MODE — pure selfhosted Flask codebase"),
-    ("V1.91", "[Session 9] CLOUD_MODE: Supabase auth, dark mode, logout, data layer dispatch"),
-    ("V1.820", "[Session 8] 20 items: Editable prompt (3 levels), mode toggle, i18n rebuild, Weight%, Market Dist, Cash Ratio, API confirm, smart errors, settings tabs, timeout, modal, label a11y"),
-    ("V1.8", "[Session 8] AI Audit: rich portfolio prompt + local inference presets (Ollama/vLLM/LM Studio)"),
-    ("V1.716", "[Session 7] Remove Crucix macro report integration"),
-    ("V1.715", "[Session 7] 15 fixes: PULSE_HOME, Free/Pro split, local CSS, form labels, JS escape, EUR/GBP FX"),
-    ("V1.612", "[Session 6] 12 fixes: yfinance refactor, batch fetch, TTL cache, atomic write, TWO market, Pulse rebrand"),
-    ("V1.5", "[Session 5] Initial release: multi-market, buy/sell, i18n, watchlist, multi-currency"),
+    ("V1.14.0", "[Session 14] Risk Metrics card (Pro) — A+ transaction-aware daily value reconstruction (BUY/SELL × closes, cash-flow-adjusted returns, CLOSED excluded), 5 metrics (Sharpe/Sortino/vol/MaxDrawdown/VaR95), 3 methods (historical/parametric/Monte Carlo, numpy-vectorized), Settings tab (period 90–5y, method, paths 1000–10000), 6h cache + 3h warmer, 3-language i18n + tooltips, standalone validation script"),
+    ("V1.13.0", "[Session 13] Earnings Calendar card — upcoming earnings dates for all portfolio tickers (OPEN+CLOSED positions), yfinance Ticker.calendar + earnings_dates fallback, 6h TTL cache, 30-day lookahead"),
+    ("V1.12.2", "[Session 12] Compact index ticker in top bar (between market status/refresh); Settings max 5 hard limit, min 1 warning; clickable filter"),
+    ("V1.12.1", "[Session 12] User-selected indices — all 13 selectable in Settings (min 5 hint, counter, empty-state notice); removed fixed defaults"),
+    ("V1.12.0", "[Session 12] Indices & FX Dashboard — 5 live market indices (S&P/Hang Seng/Shanghai/TAIEX/TPEx), currency rates row, yfinance cached"),
+    ("V1.11.3", "[Session 11] AJAX watchlist reload — add/delete/rename/reorder without page refresh + loading overlay"),
+    ("V1.11.2", "[Session 11] Fix i18n: settings_tab_bg English, import/export description labels"),
+    ("V1.11.1", "[Session 11] Custom background image upload + remove + opacity slider in separate Settings tab"),
+    ("V1.10.17", "[Session 10] Add JPY/EUR/GBP to currency dropdowns + FX matrix"),
+    ("V1.10.16", "[Session 10] Fix: avg_buy_price converted to primary currency, ATR tooltip on column header"),
+    ("V1.10.15", "[Session 10] Fix: clear HIGHEST_PRICE_CACHE per-request to prevent cross-currency pollution"),
+    ("V1.10.14", "[Session 10] Fix: ATR stop-loss now converted to primary currency (was raw native)"),
+    ("V1.10.13", "[Session 10] Fix: Performance card historical prices now converted to primary currency"),
+    ("V1.10.12", "[Session 10] Fix: FX cross-rate formula inverted, buy price label JS DOM timing, clean HKD/TWD symbols"),
+    ("V1.10.11", "[Session 10] Multi-currency Phase 2: primary/secondary currency, market-native buy/sell labels, FX cross-rate matrix, all prices in primary currency"),
+    ("V1.10.1", "[Session 10] Financial disclaimer banner on all pages"),
+    ("V1.9.5", "[Session 9] Performance card: Today/WTD/MTD/YTD returns using historical prices"),
+    ("V1.9.4", "[Session 9] Watchlist multi-market support, JSON import/export (watchlist + portfolio)"),
+    ("V1.9.3", "[Session 9] Company names in ticker display, watchlist sidebar indicator, remove $ prefix"),
+    ("V1.9.2", "[Session 9] Remove CLOUD_MODE — pure selfhosted Flask codebase"),
+    ("V1.9.1", "[Session 9] CLOUD_MODE: Supabase auth, dark mode, logout, data layer dispatch"),
+    ("V1.8.20", "[Session 8] 20 items: Editable prompt (3 levels), mode toggle, i18n rebuild, Weight%, Market Dist, Cash Ratio, API confirm, smart errors, settings tabs, timeout, modal, label a11y"),
+    ("V1.8.1", "[Session 8] AI Audit: rich portfolio prompt + local inference presets (Ollama/vLLM/LM Studio)"),
+    ("V1.7.16", "[Session 7] Remove Crucix macro report integration"),
+    ("V1.7.15", "[Session 7] 15 fixes: PULSE_HOME, Free/Pro split, local CSS, form labels, JS escape, EUR/GBP FX"),
+    ("V1.6.12", "[Session 6] 12 fixes: yfinance refactor, batch fetch, TTL cache, atomic write, TWO market, Pulse rebrand"),
+    ("V1.5.1", "[Session 5] Initial release: multi-market, buy/sell, i18n, watchlist, multi-currency"),
 ]
 
 CURRENCY_SYMBOLS = {"USD": "$", "HKD": "$", "TWD": "$", "CNY": "¥", "JPY": "¥", "EUR": "€", "GBP": "£"}
 CURRENCY_MAP = {"USD": "USD=X", "HKD": "HKD=X", "TWD": "TWD=X", "CNY": "CNY=X", "JPY": "JPY=X", "EUR": "EUR=X", "GBP": "GBP=X"}
 DEFAULT_CONFIG = {
-    "api_key": "", "refresh_interval": 30, "language": "zh_tw",
+    "api_key": "", "refresh_interval": 30, "language": "zh_tw", "bg_image": False, "bg_opacity": 0.55,
     "ai_provider": "gemini", "ai_model": "gemini-2.5-flash",
     "custom_api_url": "https://generativelanguage.googleapis.com/v1beta/models/",
     "primary_currency": "USD",
@@ -56,7 +71,11 @@ DEFAULT_CONFIG = {
     "cash_balance": 0,
     "prompt_level": "balanced",
     "custom_prompt": "",
-    "prompt_mode": "style"
+    "prompt_mode": "style",
+    "extra_indices": [],
+    "risk_period": 90,           # 90 | 120 | 180 | 365 | 0(=longest, 5y)
+    "risk_method": "historical", # historical | parametric | montecarlo
+    "risk_paths": 5000           # 1000–10000, Monte Carlo only
 }
 # ==================== 翻译字典 (i18n) ====================
 TRANSLATIONS = {
@@ -118,7 +137,13 @@ TRANSLATIONS = {
         "settings_title": "⚙️ 系統設定",
         "settings_close": "✕ 關閉",
         "settings_tab_general": "一般設定",
+        "settings_tab_bg": "背景圖",
         "settings_tab_ai": "AI 模型",
+        "settings_tab_indices": "📊 指數",
+        "settings_indices_hint": "選擇 1–5 個要顯示的指數，存檔後套用至市場概覽。（超過 5 個將無法勾選）",
+        "settings_indices_selectable": "可選指數",
+        "settings_indices_min": "最多 5 個",
+        "index_none_compact": "未選指數 — 點此設定",
         "settings_timeout": "Timeout (秒)",
         "settings_prompt_level": "分析風格",
         "settings_custom_prompt": "自訂 Prompt",
@@ -131,6 +156,10 @@ TRANSLATIONS = {
         "table_weight": "持股權重",
         "card_market_dist": "市場分佈",
         "card_cash_ratio": "現金比率",
+        "index_title": "🌍 市場概覽",
+        "index_fx_label": "匯率",
+        "index_none": "尚未選擇指數，請到 Settings → 📊 指數 勾選後儲存。",
+        "index_none": "尚未選擇指數，請到 Settings → 📊 指數 勾選後儲存。",
         "perf_title": "📈 投資表現",
         "perf_today": "今日",
         "perf_wtd": "本週",
@@ -152,6 +181,7 @@ TRANSLATIONS = {
         "wl_add_cat": "+ 新增分組",
         "wl_delete_cat": "刪除組",
         "wl_input_placeholder": "輸入代碼",
+        "wl_loading": "更新中...",
         "wl_new_cat_prompt": "新分組名稱",
         "wl_market_label": "市場",
         "export_btn": "📤 導出",
@@ -164,6 +194,7 @@ TRANSLATIONS = {
         "import_exists_skip": "已存在，跳過",
         "import_success": "導入成功",
         "export_select": "選擇導出內容",
+        "import_export_desc": "導入/導出 交易明細及自選股",
         "watchlist_title": "🔍 WATCHLIST 自選股",
         "capital_recovered_badge": "💰 本金已收回",
         "capital_recover_hint": "💡 需再賣出",
@@ -176,7 +207,49 @@ TRANSLATIONS = {
         "audit_title": "🧠 AI 投資組合分析報告",
         "audit_loading": "AI 分析中，請稍候...",
         "audit_confirm": "將會使用你的 API Key 呼叫 AI 模型產生報告，確定要繼續嗎？",
-        "disclaimer": "免責聲明：本應用程式僅供資訊記錄與教育參考，不構成任何財務、投資或法律建議。AI 分析為自動化生成，不應作為投資決策的唯一依據。"
+        "disclaimer": "免責聲明：本應用程式僅供資訊記錄與教育參考，不構成任何財務、投資或法律建議。AI 分析為自動化生成，不應作為投資決策的唯一依據。",
+        "bg_title": "背景圖",
+        "bg_upload_btn": "上傳",
+        "bg_remove_btn": "移除",
+        "bg_invalid_format": "不支援的格式（僅限 jpg/png/gif/webp）",
+        "bg_opacity": "覆蓋透明度",
+        "earnings_title": "📅 財報日曆",
+        "earnings_window_label": "未來{days}天",
+        "earnings_ticker_header": "股票",
+        "earnings_date_header": "財報日期",
+        "earnings_countdown_label": "{n}天",
+        "earnings_today": "今天",
+        "earnings_no_data": "無即將到來的財報",
+        "earnings_source_note": "數據來源 Yahoo Finance",
+        "risk_card_title": "📉 風險指標",
+        "risk_settings_tab": "📉 風險指標",
+        "risk_settings_intro": "以交易日期重建每日持倉市值，計算三種風險模型：歷史模擬（直接取歷史報酬分位數）、參數法（假設常態分配）、Monte Carlo（亂數模擬路徑）。",
+        "risk_period_label": "計算期間",
+        "risk_period_90": "90 天",
+        "risk_period_120": "120 天",
+        "risk_period_180": "180 天",
+        "risk_period_365": "365 天",
+        "risk_period_longest": "最長 (最多 5 年)",
+        "risk_method_label": "計算方法",
+        "risk_method_historical": "歷史模擬",
+        "risk_method_parametric": "參數法",
+        "risk_method_montecarlo": "Monte Carlo",
+        "risk_paths_label": "模擬路徑數",
+        "risk_paths_hint": "路徑愈小計算速度快，反之愈大計算速度慢",
+        "risk_sharpe": "Sharpe 比率",
+        "risk_sharpe_hint": "每單位總風險（年化波動）所換取的超額報酬（無風險利率假設 0%）。愈高代表風險調整後報酬愈佳。",
+        "risk_sortino": "Sortino 比率",
+        "risk_sortino_hint": "與 Sharpe 類似，但只以「下跌波動」（負報酬）作為風險分母，只看下行風險。",
+        "risk_volatility": "年化波動率",
+        "risk_volatility_hint": "每日報酬標準差 × √252，衡量報酬的波動程度。數值愈高代表價格波動愈大。",
+        "risk_max_drawdown": "最大回撤",
+        "risk_max_drawdown_hint": "期間內從最高點回落的「最大幅度」（現金流調整後），代表歷史最差的下跌深度。",
+        "risk_var": "VaR 95% (1日)",
+        "risk_var_hint": "有 95% 信心，單日損失不會超過此金額。歷史模擬取歷史報酬第 5 百分位；參數法假設常態分配；Monte Carlo 以模擬路徑估算。",
+        "risk_no_positions": "尚無未平倉持倉，無法計算風險指標",
+        "risk_insufficient_data": "資料不足（需至少 2 個交易日）",
+        "risk_source_note": "資料來源 Yahoo Finance · 現金流調整法 · 無風險利率 0%",
+        "risk_pro_only_note": "風險指標僅在 Pro 版本可用。"
     },
     "zh_cn": {
         "title": "Pulse",
@@ -231,7 +304,13 @@ TRANSLATIONS = {
         "settings_title": "⚙️ 系统设定",
         "settings_close": "✕ 关闭",
         "settings_tab_general": "一般设定",
+        "settings_tab_bg": "背景图",
         "settings_tab_ai": "AI 模型",
+        "settings_tab_indices": "📊 指数",
+        "settings_indices_hint": "选择 1–5 个要显示的指数，保存后套用至市场概览。（超过 5 个将无法勾选）",
+        "settings_indices_selectable": "可选指数",
+        "settings_indices_min": "最多 5 个",
+        "index_none_compact": "未选指数 — 点此设定",
         "settings_timeout": "Timeout (秒)",
         "settings_prompt_level": "分析风格",
         "settings_custom_prompt": "自订 Prompt",
@@ -244,6 +323,10 @@ TRANSLATIONS = {
         "table_weight": "持股权重",
         "card_market_dist": "市场分布",
         "card_cash_ratio": "现金比率",
+        "index_title": "🌍 市场概览",
+        "index_fx_label": "汇率",
+        "index_none": "尚未选择指数，请到 Settings → 📊 指数 勾选后保存。",
+        "index_none": "尚未选择指数，请到 Settings → 📊 指数 勾选后保存。",
         "perf_title": "📈 投资表现",
         "perf_today": "今日",
         "perf_wtd": "本周",
@@ -265,6 +348,7 @@ TRANSLATIONS = {
         "wl_add_cat": "+ 新增分组",
         "wl_delete_cat": "删除组",
         "wl_input_placeholder": "输入代码",
+        "wl_loading": "更新中...",
         "wl_new_cat_prompt": "新分组名称",
         "wl_market_label": "市场",
         "export_btn": "📤 导出",
@@ -277,6 +361,7 @@ TRANSLATIONS = {
         "import_exists_skip": "已存在，跳过",
         "import_success": "导入成功",
         "export_select": "选择导出内容",
+        "import_export_desc": "导入/导出 交易明细及自选股",
         "watchlist_title": "🔍 WATCHLIST 自选股",
         "capital_recovered_badge": "💰 本金已收回",
         "capital_recover_hint": "💡 需再卖出",
@@ -289,7 +374,49 @@ TRANSLATIONS = {
         "audit_title": "🧠 AI 投资组合分析报告",
         "audit_loading": "AI 分析中，请稍候...",
         "audit_confirm": "将会使用你的 API Key 调用 AI 模型生成报告，确定要继续吗？",
-        "disclaimer": "免责声明：本应用程序仅供信息记录与教育参考，不构成任何财务、投资或法律建议。AI 分析为自动化生成，不应作为投资决策的唯一依据。"
+        "disclaimer": "免责声明：本应用程序仅供信息记录与教育参考，不构成任何财务、投资或法律建议。AI 分析为自动化生成，不应作为投资决策的唯一依据。",
+        "bg_title": "背景图",
+        "bg_upload_btn": "上传",
+        "bg_remove_btn": "移除",
+        "bg_invalid_format": "不支持的格式（仅限 jpg/png/gif/webp）",
+        "bg_opacity": "覆盖透明度",
+        "earnings_title": "📅 财报日历",
+        "earnings_window_label": "未来{days}天",
+        "earnings_ticker_header": "股票",
+        "earnings_date_header": "财报日期",
+        "earnings_countdown_label": "{n}天",
+        "earnings_today": "今天",
+        "earnings_no_data": "无即将到来的财报",
+        "earnings_source_note": "数据来源 Yahoo Finance",
+        "risk_card_title": "📉 风险指标",
+        "risk_settings_tab": "📉 风险指标",
+        "risk_settings_intro": "以交易日期重建每日持仓市值，计算三种风险模型：历史模拟（直接取历史报酬分位数）、参数法（假设正态分布）、Monte Carlo（随机模拟路径）。",
+        "risk_period_label": "计算期间",
+        "risk_period_90": "90 天",
+        "risk_period_120": "120 天",
+        "risk_period_180": "180 天",
+        "risk_period_365": "365 天",
+        "risk_period_longest": "最长 (最多 5 年)",
+        "risk_method_label": "计算方法",
+        "risk_method_historical": "历史模拟",
+        "risk_method_parametric": "参数法",
+        "risk_method_montecarlo": "Monte Carlo",
+        "risk_paths_label": "模拟路径数",
+        "risk_paths_hint": "路径愈小计算速度快，反之愈大计算速度慢",
+        "risk_sharpe": "Sharpe 比率",
+        "risk_sharpe_hint": "每单位总风险（年化波动）所换取的超额报酬（无风险利率假设 0%）。愈高代表风险调整后报酬愈佳。",
+        "risk_sortino": "Sortino 比率",
+        "risk_sortino_hint": "与 Sharpe 类似，但只以「下跌波动」（负报酬）作为风险分母，只看下行风险。",
+        "risk_volatility": "年化波动率",
+        "risk_volatility_hint": "每日报酬标准差 × √252，衡量报酬的波动程度。数值愈高代表价格波动愈大。",
+        "risk_max_drawdown": "最大回撤",
+        "risk_max_drawdown_hint": "期间内从最高点回落的「最大幅度」（现金流调整后），代表历史最差的下跌深度。",
+        "risk_var": "VaR 95% (1日)",
+        "risk_var_hint": "有 95% 信心，单日损失不会超过此金额。历史模拟取历史报酬第 5 百分位；参数法假设正态分布；Monte Carlo 以模拟路径估算。",
+        "risk_no_positions": "尚无未平仓持仓，无法计算风险指标",
+        "risk_insufficient_data": "数据不足（需至少 2 个交易日）",
+        "risk_source_note": "资料来源 Yahoo Finance · 现金流调整法 · 无风险利率 0%",
+        "risk_pro_only_note": "风险指标仅在 Pro 版本可用。"
     },
     "en": {
         "title": "Pulse",
@@ -344,7 +471,13 @@ TRANSLATIONS = {
         "settings_title": "⚙️ System Settings",
         "settings_close": "✕ Close",
         "settings_tab_general": "General",
+        "settings_tab_bg": "Background",
         "settings_tab_ai": "AI Model",
+        "settings_tab_indices": "📊 Indices",
+        "settings_indices_hint": "Select 1–5 indices to display. Save to apply to the market overview. (Max 5 — others will be disabled)",
+        "settings_indices_selectable": "Selectable Indices",
+        "settings_indices_min": "max 5",
+        "index_none_compact": "No indices — click to set",
         "settings_timeout": "Timeout (sec)",
         "settings_prompt_level": "Analysis Style",
         "settings_custom_prompt": "Custom Prompt",
@@ -357,6 +490,10 @@ TRANSLATIONS = {
         "table_weight": "Weight %",
         "card_market_dist": "Market Distribution",
         "card_cash_ratio": "Cash Ratio",
+        "index_title": "🌍 Market Overview",
+        "index_fx_label": "FX",
+        "index_none": "No indices selected. Go to Settings → 📊 Indices to choose and save.",
+        "index_none": "No indices selected. Go to Settings → 📊 Indices to choose and save.",
         "perf_title": "📈 Performance",
         "perf_today": "Today",
         "perf_wtd": "WTD",
@@ -378,6 +515,7 @@ TRANSLATIONS = {
         "wl_add_cat": "+ Add Group",
         "wl_delete_cat": "Delete Group",
         "wl_input_placeholder": "Enter ticker",
+        "wl_loading": "Updating...",
         "wl_new_cat_prompt": "New group name",
         "wl_market_label": "Market",
         "export_btn": "📤 Export",
@@ -390,6 +528,7 @@ TRANSLATIONS = {
         "import_exists_skip": "Exists, skip",
         "import_success": "Import successful",
         "export_select": "Select export data",
+        "import_export_desc": "Import/Export Portfolio & Watchlist",
         "watchlist_title": "🔍 WATCHLIST",
         "capital_recovered_badge": "💰 Capital Recovered",
         "capital_recover_hint": "💡 Sell",
@@ -402,7 +541,49 @@ TRANSLATIONS = {
         "audit_title": "🧠 AI Portfolio Analysis Report",
         "audit_loading": "Analyzing with AI model...",
         "audit_confirm": "This will use your API key to call the AI model. Continue?",
-        "disclaimer": "Disclaimer: This application is for informational and educational purposes only. It does not constitute financial, investment, or legal advice. AI-generated insights are automated analyses and should not be used as the sole basis for investment decisions."
+        "disclaimer": "Disclaimer: This application is for informational and educational purposes only. It does not constitute financial, investment, or legal advice. AI analysis is automated and should not be the sole basis for investment decisions.",
+        "bg_title": "Background",
+        "bg_upload_btn": "Upload",
+        "bg_remove_btn": "Remove",
+        "bg_invalid_format": "Unsupported format (jpg/png/gif/webp only)",
+        "bg_opacity": "Overlay Opacity",
+        "earnings_title": "📅 Earnings Calendar",
+        "earnings_window_label": "Next {days} days",
+        "earnings_ticker_header": "Ticker",
+        "earnings_date_header": "Earnings Date",
+        "earnings_countdown_label": "{n} days",
+        "earnings_today": "Today",
+        "earnings_no_data": "No upcoming earnings",
+        "earnings_source_note": "Data from Yahoo Finance",
+        "risk_card_title": "📉 Risk Metrics",
+        "risk_settings_tab": "📉 Risk Metrics",
+        "risk_settings_intro": "Rebuilds daily portfolio value from transaction dates and computes three risk models: Historical Simulation (empirical return quantiles), Parametric (assumes normal distribution), Monte Carlo (simulated random paths).",
+        "risk_period_label": "Lookback period",
+        "risk_period_90": "90 days",
+        "risk_period_120": "120 days",
+        "risk_period_180": "180 days",
+        "risk_period_365": "365 days",
+        "risk_period_longest": "Longest (up to 5 years)",
+        "risk_method_label": "Method",
+        "risk_method_historical": "Historical Simulation",
+        "risk_method_parametric": "Parametric",
+        "risk_method_montecarlo": "Monte Carlo",
+        "risk_paths_label": "Path count",
+        "risk_paths_hint": "Fewer paths compute faster; more paths compute slower",
+        "risk_sharpe": "Sharpe Ratio",
+        "risk_sharpe_hint": "Excess return per unit of total risk (annualized volatility), assuming a 0% risk-free rate. Higher is better.",
+        "risk_sortino": "Sortino Ratio",
+        "risk_sortino_hint": "Like Sharpe, but penalizes only downside volatility (negative returns).",
+        "risk_volatility": "Ann. Volatility",
+        "risk_volatility_hint": "Daily return standard deviation × √252. Higher means larger price swings.",
+        "risk_max_drawdown": "Max Drawdown",
+        "risk_max_drawdown_hint": "Largest peak-to-trough decline (cash-flow adjusted) over the period — the worst historical drop.",
+        "risk_var": "VaR 95% (1-day)",
+        "risk_var_hint": "95% confidence that the one-day loss will not exceed this amount. Historical uses the 5th percentile of returns; Parametric assumes a normal distribution; Monte Carlo estimates from simulated paths.",
+        "risk_no_positions": "No open positions — risk metrics unavailable",
+        "risk_insufficient_data": "Insufficient data (need ≥ 2 trading days)",
+        "risk_source_note": "Data: Yahoo Finance · cash-flow adjusted · 0% risk-free rate",
+        "risk_pro_only_note": "Risk Metrics is a Pro feature."
     },
 }
 def get_translations(lang):
@@ -553,6 +734,166 @@ def get_company_name(ticker):
         return ''
 
 
+# ==================== 📅 財報日曆 (Earnings Calendar) ====================
+EARNINGS_LOOKAHEAD_DAYS = 30
+EARNINGS_CACHE_TTL = 21600     # 6 hours in seconds
+_earnings_cache = {}           # ticker -> (earnings_date, cached_at_ts)
+
+def _parse_earnings_date(value):
+    """Normalize a yfinance earnings-date value to datetime.date (or None).
+    Handles: datetime.date, datetime, pandas Timestamp, list/tuple (take first), ISO string."""
+    if value is None:
+        return None
+    # datetime.date / datetime.datetime / pandas Timestamp all expose year/month/day;
+    # plain datetime.date has NO .date() method (only datetime does), so return as-is.
+    if hasattr(value, "year") and hasattr(value, "month") and hasattr(value, "day"):
+        return value
+    # list/tuple -> recurse on first element
+    if isinstance(value, (list, tuple)) and value:
+        return _parse_earnings_date(value[0])
+    # string -> ISO parse
+    if isinstance(value, str):
+        for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S"):
+            try:
+                return datetime.strptime(value.strip(), fmt).date()
+            except Exception:
+                continue
+        try:
+            return datetime.fromisoformat(value.strip().replace("Z", "+00:00")).date()
+        except Exception:
+            return None
+    return None
+
+def _get_next_earnings_date(ticker):
+    """Next upcoming earnings date (datetime.date) for ticker, or None."""
+    tk = ticker.upper()
+    now = datetime.now()
+    cached = _earnings_cache.get(tk)
+    if cached and (now - cached[1]).total_seconds() < EARNINGS_CACHE_TTL:
+        return cached[0]
+    result = None
+    try:
+        cal = yf.Ticker(ticker).calendar
+        if isinstance(cal, dict):
+            ed = _parse_earnings_date(cal.get('Earnings Date'))
+            if ed is not None and ed >= now.date():
+                result = ed
+    except Exception:
+        pass
+    if result is None:
+        try:
+            edates = yf.Ticker(ticker).earnings_dates
+            if edates is not None and not edates.empty:
+                future = sorted(d for d in edates.index if d.date() >= now.date())
+                if future:
+                    result = future[0].date()
+        except Exception:
+            pass
+    if result is not None:
+        _earnings_cache[tk] = (result, datetime.now())
+    return result
+
+def get_earnings_calendar(tickers):
+    """Return sorted list of (ticker, 'YYYY-MM-DD', days_until) for upcoming earnings."""
+    if not tickers:
+        return []
+    today = datetime.now().date()
+    cutoff = today + timedelta(days=EARNINGS_LOOKAHEAD_DAYS)
+    rows = []
+    for ticker in sorted({t.upper() for t in tickers if t and str(t).strip()}):
+        ed = _get_next_earnings_date(ticker)
+        if ed is None:
+            continue
+        if today <= ed <= cutoff:
+            rows.append((ticker, ed.strftime('%Y-%m-%d'), (ed - today).days))
+    rows.sort(key=lambda r: r[1])
+    return rows
+
+
+# ==================== 📉 風險指標 (Risk Metrics, Pro) ====================
+RISK_CACHE_TTL = 21600      # 6h — mirrors EARNINGS_CACHE_TTL
+RISK_WARMER_INTERVAL = 10800  # 3h background re-warm (half TTL)
+_risk_cache = {}            # signature -> (metrics_dict, computed_at_ts)
+_risk_cache_lock = threading.Lock()
+_risk_warmer_thread = None
+
+def _risk_cache_signature(ledger_key, period_days, method, paths):
+    """Cache key = (open-position identity+share ledger, period, method, paths).
+    ledger_key = tuple(sorted((ticker, type, date, shares)) for every tx of every OPEN ticker)."""
+    return (ledger_key, period_days, method, paths)
+
+def _invalidate_risk_cache():
+    with _risk_cache_lock:
+        _risk_cache.clear()
+
+def _start_risk_warmer():
+    """Daemon thread: recompute now, then every RISK_WARMER_INTERVAL. No-op in Free tier."""
+    global _risk_warmer_thread
+    if not get_is_pro():
+        return
+    if _risk_warmer_thread and _risk_warmer_thread.is_alive():
+        return
+    def _loop():
+        while True:
+            try:
+                with _risk_cache_lock:
+                    _risk_cache.clear()
+                get_risk_metrics()   # recompute + repopulate (never raises)
+            except Exception:
+                pass
+            time.sleep(RISK_WARMER_INTERVAL)
+    _risk_warmer_thread = threading.Thread(target=_loop, daemon=True)
+    _risk_warmer_thread.start()
+
+def get_risk_metrics():
+    """Cached entry point used by _render_dashboard (Pro only). Never raises.
+    Fresh (<6h) → cached; expired → recompute synchronously; yfinance failure → serve
+    expired cache with stale=True, else {'status':'error'} (spec §6.4, §11.12)."""
+    if not get_is_pro():
+        return None
+    try:
+        config = load_config()
+        portfolio = load_portfolio()
+        prim_cur = config.get("primary_currency", "USD")
+        fx_matrix = get_fx_matrix()
+        period_days = config.get("risk_period", 90)
+        if period_days not in RISK_PERIODS: period_days = 90
+        method = config.get("risk_method", "historical")
+        if method not in RISK_METHODS: method = "historical"
+        paths = max(1000, min(10000, int(config.get("risk_paths", 5000) or 5000)))
+        # OPEN-only ledger key (no price fetch needed to decide openness)
+        agg = {}
+        for tx in portfolio:
+            agg.setdefault(tx["ticker"].upper(), []).append(
+                (tx.get("type"), tx.get("date"), float(tx.get("shares", 0) or 0)))
+        ledger_key = tuple(sorted((tk, t, d, s)
+            for tk, txs in agg.items()
+            if sum(s for t, d, s in txs if t == "BUY") > sum(s for t, d, s in txs if t == "SELL")
+            for t, d, s in txs))
+        sig = _risk_cache_signature(ledger_key, period_days, method, paths)
+        with _risk_cache_lock:
+            cached = _risk_cache.get(sig)
+            if cached and (datetime.now() - cached[1]).total_seconds() < RISK_CACHE_TTL:
+                return cached[0]
+        # Recompute (outside lock so renders don't serialize)
+        dates, values, cashflows = reconstruct_daily_values(
+            portfolio, period_days, fx_matrix, prim_cur)
+        metrics = compute_risk_metrics(dates, values, cashflows, method, paths,
+                                       prim_symbol=get_currency_symbol(prim_cur))
+        if metrics.get("status") != "ok":
+            return metrics   # no_positions / insufficient — not cached
+        result = dict(metrics)
+        with _risk_cache_lock:
+            _risk_cache[sig] = (result, datetime.now())
+        return result
+    except Exception:
+        # Stale-but-served fallback: expired cache → stale=True; else error state
+        with _risk_cache_lock:
+            for sig, (data, ts) in _risk_cache.items():
+                return dict(data, stale=True)
+        return {"status": "error"}
+
+
 def get_realtime_data(ticker):
     """Return {'price', 'prev_close', 'stale'} for a ticker.
     Uses PRICE_CACHE with TTL; calls yfinance on cache miss."""
@@ -608,6 +949,85 @@ def fetch_atr_20(ticker):
 # ==================== 💱 FX Matrix (Multi-Currency) ====================
 FX_CACHE = {}        # currency → {rate, ts}
 FX_CACHE_TTL = 300   # 5 minutes
+
+# ==================== 📊 指數與匯率儀表板 ====================
+INDEX_CACHE = {}      # ticker → {price, prev_close, ts}
+INDEX_CACHE_TTL = 300 # 5 minutes
+
+INDEX_LIST = {
+    # ── 預設：每個市場的代表指數 ──
+    "US":  {"ticker": "^GSPC", "name_en": "S&P 500", "name_zh_tw": "標普500", "name_zh_cn": "标普500", "market": "US", "default": True},
+    "HK":  {"ticker": "^HSI", "name_en": "Hang Seng", "name_zh_tw": "恆生指數", "name_zh_cn": "恒生指数", "market": "HK", "default": True},
+    "CN":  {"ticker": "000001.SS", "name_en": "Shanghai", "name_zh_tw": "上證指數", "name_zh_cn": "上证指数", "market": "CN", "default": True},
+    "TW":  {"ticker": "^TWII", "name_en": "TAIEX", "name_zh_tw": "加權指數", "name_zh_cn": "加权指数", "market": "TW", "default": True},
+    "TWO": {"ticker": "^TWOII", "name_en": "TPEx", "name_zh_tw": "櫃買指數", "name_zh_cn": "柜买指数", "market": "TWO", "default": True},
+    # ── 進階指數（用戶可在 Settings 勾選加掛）──
+    "ADV_US_NQ":  {"ticker": "^IXIC", "name_en": "NASDAQ", "name_zh_tw": "納斯達克", "name_zh_cn": "纳斯达克", "market": "US"},
+    "ADV_US_DJI": {"ticker": "^DJI", "name_en": "Dow Jones", "name_zh_tw": "道瓊工業", "name_zh_cn": "道琼斯工业", "market": "US"},
+    "ADV_US_SOX": {"ticker": "^SOX", "name_en": "Philadelphia SE", "name_zh_tw": "費城半導體", "name_zh_cn": "费城半导体", "market": "US"},
+    "ADV_HK_HSCEI": {"ticker": "^HSCE", "name_en": "HSCEI", "name_zh_tw": "國企指數", "name_zh_cn": "国企指数", "market": "HK"},
+    "ADV_HK_TECH":  {"ticker": "^HSTECH", "name_en": "Hang Seng TECH", "name_zh_tw": "恒生科技", "name_zh_cn": "恒生科技", "market": "HK"},
+    "ADV_CN_300":  {"ticker": "000300.SS", "name_en": "CSI 300", "name_zh_tw": "滬深300", "name_zh_cn": "沪深300", "market": "CN"},
+    "ADV_CN_GEB":  {"ticker": "399006.SZ", "name_en": "ChiNext", "name_zh_tw": "創業板", "name_zh_cn": "创业板", "market": "CN"},
+    "ADV_TW_TEC":  {"ticker": "^TEC.TW", "name_en": "TSEC Electronic", "name_zh_tw": "電子指數", "name_zh_cn": "电子指数", "market": "TW"},
+}
+
+def get_active_indices(config=None):
+    """Return user-selected index entries.  V1.12.1+: fully user-driven.
+    If config has no 'extra_indices' key (pre-V1.12.1 upgrade), fall back to the
+    5 market representatives so the dashboard isn't empty on first load.
+    Once the user saves Settings → Indices, the field is set and full control
+    shifts to the user — zero selected means zero displayed.
+    """
+    if config is None:
+        config = {}
+    if "extra_indices" not in config:
+        # Smooth migration: preserve current 5 defaults until user saves
+        config["extra_indices"] = [k for k, v in INDEX_LIST.items() if v.get("default")]
+    selected = [INDEX_LIST[k] for k in config["extra_indices"] if k in INDEX_LIST]
+    # Sort by market order: US, HK, CN, TW, TWO
+    market_order = {"US": 0, "HK": 1, "CN": 2, "TW": 3, "TWO": 4}
+    return sorted(selected, key=lambda x: market_order.get(x["market"], 99))
+
+def fetch_index_data(ticker):
+    """Return dict with price, prev_close, change_pct for an index ticker. Cached."""
+    now = datetime.now()
+    cached = INDEX_CACHE.get(ticker)
+    if cached and (now - cached["ts"]).total_seconds() < INDEX_CACHE_TTL:
+        return {"price": cached["price"], "prev_close": cached["prev_close"],
+                "change_pct": cached.get("change_pct", 0), "stale": False}
+    try:
+        t = yf.Ticker(ticker)
+        info = t.fast_info
+        price = getattr(info, 'last_price', None) or getattr(info, 'regular_market_price', None) or 0
+        prev = getattr(info, 'regular_market_previous_close', None) or getattr(info, 'previous_close', None) or 0
+        pct = ((price - prev) / prev * 100) if prev > 0 else 0
+        result = {"price": float(price), "prev_close": float(prev), "change_pct": round(pct, 2), "stale": False}
+        INDEX_CACHE[ticker] = {"price": result["price"], "prev_close": result["prev_close"],
+                                "change_pct": result["change_pct"], "ts": now}
+        return result
+    except Exception:
+        # Return cached data if available (stale), else empty
+        if ticker in INDEX_CACHE:
+            c2 = INDEX_CACHE[ticker]
+            return {"price": c2["price"], "prev_close": c2["prev_close"],
+                    "change_pct": c2.get("change_pct", 0), "stale": True}
+        return {"price": 0, "prev_close": 0, "change_pct": 0, "stale": True}
+
+def get_all_index_data(config=None):
+    """Return list of dicts for all active indices with live data."""
+    indices = get_active_indices(config)
+    result = []
+    for idx in indices:
+        data = fetch_index_data(idx["ticker"])
+        data["key"] = idx.get("default") and idx.get("market", "") or list(INDEX_LIST.keys())[list(INDEX_LIST.values()).index(idx)] if idx in INDEX_LIST.values() else ""
+        data["name_en"] = idx["name_en"]
+        data["name_zh_tw"] = idx["name_zh_tw"]
+        data["name_zh_cn"] = idx["name_zh_cn"]
+        data["market"] = idx["market"]
+        data["ticker"] = idx["ticker"]
+        result.append(data)
+    return result
 
 def get_fx_rate(currency):
     """Get USD→currency rate. Returns float or None."""
@@ -896,7 +1316,7 @@ def get_is_pro():
 
 
 # ==================== 🎯 4. 路由控制 ====================
-def _render_dashboard():
+def _render_dashboard(is_mobile=False):
     """Render the Pulse dashboard — shared between selfhosted index() and cloud /dashboard."""
     config = load_config()
     if "primary_currency" not in config:
@@ -964,13 +1384,20 @@ def _render_dashboard():
     markets_status = {k: is_market_open(k) for k in MARKETS}
     is_pro = get_is_pro()
 
+    # 📅 Earnings Calendar — scan ALL portfolio tickers (OPEN + CLOSED positions)
+    earnings_data = get_earnings_calendar([s["ticker"] for s in stocks])
+
+    # 📉 Risk Metrics (Pro only) — cached; None in Free tier (spec §9.6)
+    risk_metrics = get_risk_metrics() if is_pro else None
+
     return render_template_string("""
     <!DOCTYPE html>
     <html lang="en" class="dark">
     <head>
         <meta charset="UTF-8">
+{% if is_mobile %}<meta name="viewport" content="width=device-width, initial-scale=1.0">{% endif %}
         <title>Pulse — Live Data · Real Intuition</title>
-        <link rel="icon" href="/pulse_logo.png" type="image/png">
+        <link rel="icon" href="/pulse_logo.jpg" type="image/jpeg">
         <link rel="stylesheet" href="/pulse.css">
         <style>
             @keyframes pulse-alert { 0%, 100% { background-color: rgba(159, 18, 57, 0.2); } 50% { background-color: rgba(225, 29, 72, 0.5); } }
@@ -979,16 +1406,53 @@ def _render_dashboard():
             .watchlist-sidebar::after { content: '📋'; position: absolute; right: -28px; top: 50%; transform: translateY(-50%); background: #0f172a; color: #34d399; padding: 12px 6px; border-radius: 0 6px 6px 0; font-size: 16px; writing-mode: horizontal-tb; border: 1px solid rgba(255,255,255,0.1); border-left: none; cursor: default; }
             .watchlist-sidebar:hover { transform: translateX(0); }
             .watchlist-sidebar:hover::after { opacity: 0; }
+            .hamburger-btn { display: none; position: fixed; top: 10px; left: 10px; z-index: 3100; background: #1e293b; border: 1px solid #334155; color: #34d399; padding: 6px 10px; border-radius: 6px; font-size: 18px; cursor: pointer; }
             .wl-cat-group.dragging { opacity: 0.4; }
             .wl-cat-group.drag-over { border-top: 2px solid #34d399; }
+            .wl-loading-overlay { display: none; position: absolute; inset: 0; background: rgba(15,23,42,0.85); z-index: 10; align-items: center; justify-content: center; border-radius: 0; }
+            .wl-loading-overlay.active { display: flex; }
+            .wl-loading-spinner { color: #34d399; font-size: 14px; font-weight: 700; animation: wl-pulse 1.2s infinite; }
+            @keyframes wl-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
             .modal-bg { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(2, 6, 23, 0.75); backdrop-filter: blur(4px); z-index: 2000; align-items: center; justify-content: center; }
             .modal-active { display: flex; }
-        </style>
+        
+    body.has-bg::before{content:"";position:fixed;inset:0;background:rgba(10,15,30,var(--bg-opacity,0.55));z-index:0;pointer-events:none}
+{% if is_mobile %}
+    /* ── Mobile (≤768px) ── */
+    @media (max-width: 768px) {
+        .watchlist-sidebar { width: 260px; transform: translateX(-250px); z-index: 3000; }
+        .watchlist-sidebar.mobile-open { transform: translateX(0); box-shadow: 8px 0 30px rgba(0,0,0,0.6); }
+        .wl-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 2999; }
+        .wl-backdrop.active { display: block; }
+        .hamburger-btn { display: inline-flex !important; }
+        .container { padding: 0 12px; }
+        .top-bar-wrap { flex-wrap: wrap; gap: 10px; }
+        .top-bar-left { width: 100%; }
+        .top-bar-right { width: 100%; justify-content: flex-start; }
+        .cards-grid { grid-template-columns: 1fr !important; }
+        .perf-bar { flex-wrap: wrap; gap: 8px; }
+        .perf-bar > div { flex: 1 1 45%; }
+        .table-wrap { font-size: 10px; }
+        .settings-modal-inner { width: 95vw !important; max-width: none !important; margin: 8px !important; padding: 16px !important; }
+        .settings-form-grid { grid-template-columns: 1fr !important; }
+        .buy-sell-grid { grid-template-columns: 1fr !important; }
+    }
+{% endif %}
+    </style>
     </head>
     <body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
+{% if is_pro and config.bg_image %}
+        <script>document.body.classList.add('has-bg');document.body.style.backgroundImage='url(/api/bg?'+Date.now()+')';document.body.style.backgroundSize='cover';document.body.style.backgroundAttachment='fixed';document.documentElement.style.setProperty('--bg-opacity','{{ config.bg_opacity }}');</script>
+{% endif %}
+{% if is_mobile %}
+        <!-- Mobile hamburger -->
+        <button class="hamburger-btn" onclick="toggleWatchlist()" title="Watchlist">☰</button>
+        <div class="wl-backdrop" onclick="toggleWatchlist()"></div>
+{% endif %}
 
         <!-- Watchlist Sidebar -->
         <div class="watchlist-sidebar">
+        <div id="wl-loading" class="wl-loading-overlay"><span class="wl-loading-spinner">{{ t.wl_loading }}</span></div>
             <div class="flex justify-between items-center border-b border-slate-800 pb-2 mb-3">
                 <span class="text-xs font-black tracking-widest text-slate-200">{{ t.watchlist_title }}</span>
                 <button onclick="createNewCategory()" class="text-[10px] bg-slate-800 px-2 py-0.5 rounded hover:bg-slate-700 text-emerald-400 font-bold">{{ t.wl_add_cat }}</button>
@@ -1009,7 +1473,10 @@ def _render_dashboard():
                 <!-- Tab buttons -->
                 <div class="flex gap-1 mb-6">
                     <button type="button" id="tab-btn-general" onclick="switchSettingsTab('general')" class="px-4 py-1.5 text-xs font-bold rounded bg-cyan-600 text-slate-900">{{ t.settings_tab_general }}</button>
+                    <button type="button" id="tab-btn-bg" onclick="switchSettingsTab('bg')" class="px-4 py-1.5 text-xs font-bold rounded bg-slate-800 text-slate-400 hover:bg-slate-700">{{ t.settings_tab_bg }}</button>
                     <button type="button" id="tab-btn-ai" onclick="switchSettingsTab('ai')" class="px-4 py-1.5 text-xs font-bold rounded bg-slate-800 text-slate-400 hover:bg-slate-700">{{ t.settings_tab_ai }}</button>
+                    <button type="button" id="tab-btn-idx" onclick="switchSettingsTab('idx')" class="px-4 py-1.5 text-xs font-bold rounded bg-slate-800 text-slate-400 hover:bg-slate-700">{{ t.settings_tab_indices }}</button>
+                    <button type="button" id="tab-btn-risk" onclick="switchSettingsTab('risk')" class="px-4 py-1.5 text-xs font-bold rounded bg-slate-800 text-slate-400 hover:bg-slate-700">{{ t.risk_settings_tab }}</button>
                 </div>
 
                 <form action="/api/config/save" method="POST" class="space-y-4 text-xs">
@@ -1053,6 +1520,36 @@ def _render_dashboard():
                                 <option value="GBP" {% if config.secondary_currency == 'GBP' %}selected{% endif %}>£ GBP</option>
                             </select>
                         </div>
+
+                <!-- 📋 Changelog -->
+                <div class="border-t border-slate-800 mt-4 pt-4">
+                    <p class="text-slate-500 text-[10px] font-bold uppercase mb-2">{{ t.changelog_title }}</p>
+                    <div class="space-y-1 max-h-32 overflow-y-auto">
+                        {% for ver, msg in changelog %}
+                        <div class="text-[10px]"><span class="text-cyan-400 font-mono">{{ ver }}</span> <span class="text-slate-500">{{ msg }}</span></div>
+                        {% endfor %}
+                    </div>
+                </div>
+                    </div>
+
+                    <!-- BG TAB -->
+                    <div id="settings-tab-bg" class="hidden space-y-4">
+{% if is_pro %}
+                        <input type="hidden" name="bg_image" value="{% if config.bg_image %}true{% else %}false{% endif %}">
+                        <input type="hidden" name="bg_opacity" value="{{ config.bg_opacity }}">
+                        <div>
+                            <label class="block text-slate-400 font-bold mb-1">{{ t.bg_title }}</label>
+                            <div class="flex items-center gap-3">
+                                <input type="file" accept="image/*" id="bg-file-input" onchange="uploadBg(this)" class="text-slate-300 text-xs file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-bold file:bg-cyan-600 file:text-slate-900 hover:file:bg-cyan-500">
+                                <button type="button" onclick="removeBg()" id="bg-remove-btn" class="px-3 py-1.5 rounded text-xs font-bold bg-rose-900 text-rose-300 hover:bg-rose-800{% if not config.bg_image %} hidden{% endif %}">{{ t.bg_remove_btn }}</button>
+                            </div>
+                            <img id="bg-preview" src="/api/bg" class="mt-2 max-w-[200px] rounded border border-slate-700{% if not config.bg_image %} hidden{% endif %}" onerror="this.style.display='none'">
+                            <div class="mt-3">
+                                <label class="block text-slate-400 font-bold mb-1 text-xs">{{ t.bg_opacity }}: <span id="bg-opacity-val">{{ "%.2f"|format(config.bg_opacity) }}</span></label>
+                                <input type="range" name="bg_opacity" id="bg-opacity-slider" min="0" max="0.95" step="0.05" value="{{ config.bg_opacity }}" oninput="updateBgOpacity(this.value)" class="w-full max-w-[200px] accent-cyan-500">
+                            </div>
+                        </div>
+{% endif %}
                     </div>
 
                     <!-- AI TAB -->
@@ -1120,6 +1617,89 @@ def _render_dashboard():
                         {% endif %}
                     </div>
 
+                    <!-- 📊 INDICES TAB (V1.12.1 — fully user-selected) -->
+                    <div id="settings-tab-idx" class="hidden space-y-4">
+                        <p class="text-slate-400 text-[11px]">{{ t.settings_indices_hint }}</p>
+                        <div>
+                            <label class="block text-slate-400 font-bold mb-1">{{ t.settings_indices_selectable }} <span id="idx-count" class="text-cyan-400 font-mono text-[10px]">{{
+                                (config.extra_indices or [])|length
+                            }}</span><span class="text-slate-600 font-mono text-[10px]">/5</span>
+                            <span id="idx-warn" class="text-amber-400 text-[10px] hidden ml-1">⚠ {{ t.settings_indices_min }}</span></label>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-1.5">
+                                {% for key, idx in index_list.items() %}
+                                <label class="flex items-center gap-2 bg-slate-950/60 border border-slate-800 rounded px-2 py-1.5 cursor-pointer hover:border-cyan-700">
+                                    <input type="checkbox" name="extra_indices" value="{{ key }}" {% if key in (config.extra_indices or []) %}checked{% endif %} class="accent-cyan-500 idx-cb">
+                                    <span class="text-slate-200 font-bold">{{ idx.name_zh_tw }}</span>
+                                    <span class="text-slate-500 text-[10px] font-mono ml-auto">{{ idx.ticker }}</span>
+                                    <span class="text-slate-600 text-[9px] font-mono ml-1">{{ idx.market }}</span>
+                                </label>
+                                {% endfor %}
+                            </div>
+                            <script>
+                                (function() {
+                                    var cbs = document.querySelectorAll('.idx-cb');
+                                    var cnt = document.getElementById('idx-count');
+                                    var warn = document.getElementById('idx-warn');
+                                    var MAX = 5;
+                                    function update() {
+                                        var n = 0;
+                                        cbs.forEach(function(c) { if (c.checked) n++; });
+                                        cnt.textContent = n;
+                                        warn.classList.toggle('hidden', n > 0);
+                                        // Disable unchecked when at max
+                                        var atMax = (n >= MAX);
+                                        cbs.forEach(function(c) {
+                                            if (!c.checked) c.disabled = atMax;
+                                        });
+                                    }
+                                    cbs.forEach(function(c) { c.addEventListener('change', update); });
+                                    update();
+                                })();
+                            </script>
+                        </div>
+                    </div>
+
+                    <!-- 📉 RISK METRICS TAB (Pro) — mirrors AI-tab pattern (spec §7.1) -->
+                    <div id="settings-tab-risk" class="hidden space-y-4">
+                        {% if is_pro %}
+                        <p class="text-slate-400 text-[11px]">{{ t.risk_settings_intro }}</p>
+                        <div>
+                            <label class="block text-slate-400 font-bold mb-1" for="settings-risk-period">{{ t.risk_period_label }}</label>
+                            <select name="risk_period" id="settings-risk-period" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-bold">
+                                <option value="90" {% if config.risk_period == 90 %}selected{% endif %}>{{ t.risk_period_90 }}</option>
+                                <option value="120" {% if config.risk_period == 120 %}selected{% endif %}>{{ t.risk_period_120 }}</option>
+                                <option value="180" {% if config.risk_period == 180 %}selected{% endif %}>{{ t.risk_period_180 }}</option>
+                                <option value="365" {% if config.risk_period == 365 %}selected{% endif %}>{{ t.risk_period_365 }}</option>
+                                <option value="0" {% if config.risk_period == 0 %}selected{% endif %}>{{ t.risk_period_longest }}</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-slate-400 font-bold mb-1" for="settings-risk-method">{{ t.risk_method_label }}</label>
+                            <select name="risk_method" id="settings-risk-method" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-bold">
+                                <option value="historical" {% if config.risk_method == 'historical' %}selected{% endif %}>{{ t.risk_method_historical }}</option>
+                                <option value="parametric" {% if config.risk_method == 'parametric' %}selected{% endif %}>{{ t.risk_method_parametric }}</option>
+                                <option value="montecarlo" {% if config.risk_method == 'montecarlo' %}selected{% endif %}>{{ t.risk_method_montecarlo }}</option>
+                            </select>
+                        </div>
+                        <div id="risk-paths-row" {% if config.risk_method != 'montecarlo' %}class="hidden"{% endif %}>
+                            <label class="block text-slate-400 font-bold mb-1" for="settings-risk-paths">{{ t.risk_paths_label }}</label>
+                            <input type="number" name="risk_paths" id="settings-risk-paths" value="{{ config.risk_paths }}" min="1000" max="10000" step="100" class="w-40 bg-slate-950 border border-slate-800 rounded p-2 text-slate-100 font-mono">
+                            <p class="text-slate-600 text-[10px] mt-1">{{ t.risk_paths_hint }}</p>
+                        </div>
+                        <script>
+                            (function() {
+                                var sel = document.getElementById('settings-risk-method');
+                                var row = document.getElementById('risk-paths-row');
+                                if (sel && row) sel.addEventListener('change', function() {
+                                    row.classList.toggle('hidden', this.value !== 'montecarlo');
+                                });
+                            })();
+                        </script>
+                        {% else %}
+                        <p class="text-slate-500 text-sm">{{ t.risk_pro_only_note }}</p>
+                        {% endif %}
+                    </div>
+
                     <div class="border-t border-slate-800 pt-4 flex justify-end">
                         <button type="submit" class="px-6 py-2 bg-cyan-600 hover:bg-cyan-500 font-black rounded text-slate-900 tracking-wider">{{ t.settings_save }}</button>
                     </div>
@@ -1129,21 +1709,12 @@ def _render_dashboard():
                 <div class="border-t border-slate-800 mt-4 pt-4">
                     <p class="text-slate-500 text-[10px] font-bold uppercase mb-2">📥📤 Import / Export</p>
                     <div class="flex gap-2">
-                        <button type="button" onclick="doExport()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded text-xs font-bold">{{ t.export_btn }}</button>
+                        <p class="text-slate-500 text-[10px] mb-2">{{ t.import_export_desc }}</p>
+                    <button type="button" onclick="doExport()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded text-xs font-bold">{{ t.export_btn }}</button>
                         <button type="button" onclick="document.getElementById('import-file').click()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded text-xs font-bold">{{ t.import_btn }}</button>
                         <input type="file" id="import-file" accept=".json" onchange="doImport(this)" class="hidden">
                     </div>
                     <div id="import-preview" class="hidden mt-2 text-xs text-slate-400"></div>
-                </div>
-
-                <!-- 📋 更新日誌 -->
-                <div class="border-t border-slate-800 mt-4 pt-4">
-                    <p class="text-slate-500 text-[10px] font-bold uppercase mb-2">{{ t.changelog_title }}</p>
-                    <div class="space-y-1 max-h-32 overflow-y-auto">
-                        {% for ver, msg in changelog %}
-                        <div class="text-[10px]"><span class="text-cyan-400 font-mono">{{ ver }}</span> <span class="text-slate-500">{{ msg }}</span></div>
-                        {% endfor %}
-                    </div>
                 </div>
             </div>
         </div>
@@ -1152,7 +1723,7 @@ def _render_dashboard():
             <!-- 頂部 Bar -->
             <div class="flex justify-between items-center border-b border-slate-800 pb-6 mb-8">
                 <div class="flex items-center gap-4">
-                    <img src="/pulse_logo.png" alt="Pulse" class="w-10 h-10 rounded-lg">
+                    <img src="/pulse_logo.jpg" alt="Pulse" class="w-10 h-10 rounded-lg">
                     <div>
                         <h1 class="text-3xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400">{{ t.title }}</h1>
                         <p class="text-slate-400 text-sm mt-1">{{ t.subtitle }}
@@ -1166,6 +1737,37 @@ def _render_dashboard():
                         </p>
                     </div>
                 </div>
+                <!-- 📊 Index ticker + FX (compact, top bar) -->
+                {% if index_data %}
+                <div class="border border-slate-500/50 rounded-lg px-3 py-2 text-[10px]">
+                    <div class="flex items-center gap-1 overflow-hidden" style="flex-wrap: nowrap">
+                        <span class="text-slate-600 font-bold mr-0.5">📊</span>
+                        {% for idx in index_data %}
+                        <span class="cursor-pointer hover:bg-slate-800 rounded px-1 py-0.5 transition-colors inline-flex items-center gap-0.5" onclick="filterMarket('{{ idx.market }}')" title="{{ idx.name_en }}">
+                            <span class="text-slate-400">{{ idx.name_en }}</span>
+                            <span class="font-mono text-cyan-400 font-bold">{{ "{:,.0f}".format(idx.price) }}</span>
+                            <span class="font-mono {% if idx.change_pct >= 0 %}text-emerald-400{% else %}text-rose-500{% endif %}">
+                                {{ "▲" if idx.change_pct >= 0 else "▼" }}{{ "%.2f"|format(idx.change_pct|abs) }}%
+                            </span>
+                        </span>
+                        {% if not loop.last %}<span class="text-slate-700 text-[8px]">｜</span>{% endif %}
+                        {% endfor %}
+                    </div>
+                    <hr class="border-slate-500/30 my-1.5">
+                    <div class="flex items-center gap-1 overflow-hidden text-[10px]" style="flex-wrap: nowrap">
+                        <span class="text-slate-500 mr-0.5">💱</span>
+                        {% for cur in ["USD", "HKD", "CNY", "TWD"] %}
+                            {% if cur != prim_cur and fx_matrix.get(prim_cur, {}).get(cur) %}
+                            <span class="text-slate-500">{{ prim_cur|upper }}→{{ cur }}</span>
+                            <span class="font-mono text-slate-300">{{ "%.4f"|format(fx_matrix[prim_cur][cur]) }}</span>
+                            {% if not loop.last %}<span class="text-slate-700">｜</span>{% endif %}
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+                </div>
+                {% else %}
+                <div class="text-slate-500 text-[10px] px-3 cursor-pointer hover:text-cyan-400" onclick="toggleSettingsModal()">{{ t.index_none_compact }}</div>
+                {% endif %}
                 <div class="flex items-center gap-3">
                     <div class="bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 flex items-center gap-2 text-xs">
                         <span class="text-slate-400 font-bold">{{ t.auto_refresh_label }}</span>
@@ -1200,25 +1802,72 @@ def _render_dashboard():
 {% endif %}
             </div>
 
-            {% if is_pro %}
-            <!-- Pro: 投資表現 + 市場分佈 + 現金比率 -->
-            <div class="grid grid-cols-3 gap-6 mb-8">
-                <!-- 📈 Performance -->
-                <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl">
-                    <p class="text-slate-400 text-xs font-bold uppercase mb-3">{{ t.perf_title }}</p>
-                    <div class="space-y-2 text-xs">
-                        {% for period in [('today', t.perf_today), ('wtd', t.perf_wtd), ('mtd', t.perf_mtd), ('ytd', t.perf_ytd)] %}
-                        {% set pct = perf[period[0]].pct %}
-                        {% set bar_w = [pct|abs * 3, 100]|min if pct else 0 %}
-                        <div class="flex items-center gap-2">
-                            <span class="text-slate-400 w-10 text-right font-mono">{{ period[1] }}</span>
-                            <div class="flex-1 bg-slate-800 rounded-full h-2 overflow-hidden">
-                                <div class="h-full rounded-full {% if pct >= 0 %}bg-emerald-400{% else %}bg-rose-500{% endif %}" style="width: {{ '%.0f'|format(bar_w) }}%"></div>
-                            </div>
-                            <span class="font-mono font-bold text-[11px] {% if pct >= 0 %}text-emerald-400{% else %}text-rose-500{% endif %}">{{ '%+.1f'|format(pct) }}%</span>
-                        </div>
-                        {% endfor %}
+            {% if earnings_data %}
+            <!-- 📅 Earnings Calendar -->
+            <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl mb-8">
+                <div class="flex items-center justify-between mb-3">
+                    <p class="text-slate-400 text-xs font-bold uppercase">{{ t.earnings_title }}</p>
+                    <span class="text-[10px] text-slate-500">{{ t.earnings_window_label.replace("{days}", earnings_lookahead_days|string) }}</span>
+                </div>
+                <div class="flex flex-wrap gap-x-6 gap-y-2 text-xs">
+                    {% for item in earnings_data %}
+                    <div class="flex items-center gap-2">
+                        <span class="font-mono font-bold text-cyan-400">{{ item[0] }}</span>
+                        <span class="text-slate-300 font-mono">{{ item[1] }}</span>
+                        <span class="text-slate-500">{% if item[2] == 0 %}{{ t.earnings_today }}{% else %}{{ t.earnings_countdown_label.replace("{n}", item[2]|string) }}{% endif %}</span>
                     </div>
+                    {% if not loop.last %}<span class="text-slate-700 text-[8px] self-center">｜</span>{% endif %}
+                    {% endfor %}
+                </div>
+                <p class="text-[10px] text-slate-600 mt-2">⚠ 此卡片暫時只支援美國市場，未來會開放更多市場</p>
+            </div>
+            {% endif %}
+
+            <!-- 📈 Performance (Free + Pro — horizontal bar, spec §9.1) -->
+            <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl mb-8 flex items-center gap-6">
+                <p class="text-slate-400 text-xs font-bold uppercase whitespace-nowrap">{{ t.perf_title }}</p>
+                {% for period in [('today', t.perf_today), ('wtd', t.perf_wtd), ('mtd', t.perf_mtd), ('ytd', t.perf_ytd)] %}
+                <div class="flex items-center gap-1.5">
+                    <span class="text-slate-500 text-[10px] uppercase">{{ period[1] }}</span>
+                    <span class="font-mono font-bold text-sm {% if perf[period[0]].pct >= 0 %}text-emerald-400{% else %}text-rose-500{% endif %}">{{ '%+.1f'|format(perf[period[0]].pct) }}%</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% if is_pro %}
+            <!-- Pro: 📉 Risk Metrics + 🌍 Market Dist + 💰 Cash Ratio -->
+            <div class="grid grid-cols-3 gap-6 mb-8">
+                <!-- 📉 Risk Metrics -->
+                <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl">
+                    <p class="text-slate-400 text-xs font-bold uppercase mb-3">{{ t.risk_card_title }}</p>
+                    {% if risk_metrics and risk_metrics.status == 'ok' %}
+                    <div class="space-y-2 text-xs">
+                        <div class="flex justify-between items-center" title="{{ t.risk_sharpe_hint }}">
+                            <span class="text-slate-400 text-xs">{{ t.risk_sharpe }}</span>
+                            <span class="font-mono font-bold text-cyan-400">{{ risk_metrics.sharpe }}</span>
+                        </div>
+                        <div class="flex justify-between items-center" title="{{ t.risk_sortino_hint }}">
+                            <span class="text-slate-400 text-xs">{{ t.risk_sortino }}</span>
+                            <span class="font-mono font-bold text-cyan-400">{{ risk_metrics.sortino }}</span>
+                        </div>
+                        <div class="flex justify-between items-center" title="{{ t.risk_volatility_hint }}">
+                            <span class="text-slate-400 text-xs">{{ t.risk_volatility }}</span>
+                            <span class="font-mono font-bold text-cyan-400">{{ risk_metrics.volatility }}</span>
+                        </div>
+                        <div class="flex justify-between items-center" title="{{ t.risk_max_drawdown_hint }}">
+                            <span class="text-slate-400 text-xs">{{ t.risk_max_drawdown }}</span>
+                            <span class="font-mono font-bold text-rose-400">{{ risk_metrics.max_drawdown }}</span>
+                        </div>
+                        <div class="flex justify-between items-center" title="{{ t.risk_var_hint }}">
+                            <span class="text-slate-400 text-xs">{{ t.risk_var }}{% if config.risk_method == 'historical' %}-{{ t.risk_method_historical }}{% elif config.risk_method == 'parametric' %}-{{ t.risk_method_parametric }}{% elif config.risk_method == 'montecarlo' %}-{{ t.risk_method_montecarlo }}{% endif %}</span>
+                            <span class="font-mono font-bold text-rose-400">{{ risk_metrics.var95_amount }} <span class="text-[10px]">({{ risk_metrics.var95_pct }})</span></span>
+                        </div>
+                    </div>
+                    {% if risk_metrics.stale %} <p class="text-[10px] text-amber-500 mt-2">stale</p>{% endif %}
+                    {% elif risk_metrics and risk_metrics.status == 'no_positions' %}
+                    <p class="text-slate-500 text-xs text-center py-4">{{ t.risk_no_positions }}</p>
+                    {% else %}
+                    <p class="text-slate-500 text-xs text-center py-4">{{ t.risk_insufficient_data }}</p>
+                    {% endif %}
                 </div>
                 <!-- 🌍 Market Distribution -->
                 <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl">
@@ -1247,18 +1896,7 @@ def _render_dashboard():
                 </div>
             </div>
             {% endif %}
-            {% if not is_pro %}
-            <!-- 📈 Performance (Free) -->
-            <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl mb-8 flex items-center gap-6">
-                <p class="text-slate-400 text-xs font-bold uppercase whitespace-nowrap">{{ t.perf_title }}</p>
-                {% for period in [('today', t.perf_today), ('wtd', t.perf_wtd), ('mtd', t.perf_mtd), ('ytd', t.perf_ytd)] %}
-                <div class="flex items-center gap-1.5">
-                    <span class="text-slate-500 text-[10px] uppercase">{{ period[1] }}</span>
-                    <span class="font-mono font-bold text-sm {% if perf[period[0]].pct >= 0 %}text-emerald-400{% else %}text-rose-500{% endif %}">{{ '%+.1f'|format(perf[period[0]].pct) }}%</span>
-                </div>
-                {% endfor %}
-            </div>
-            {% endif %}
+            {# Performance bar now renders unconditionally above the Pro grid (Edit 5a) #}
 
             <!-- 交易輸入表單 -->
             <div class="grid grid-cols-2 gap-6 mb-8">
@@ -1432,16 +2070,22 @@ def _render_dashboard():
             // 🔀 Settings tab switching
             function switchSettingsTab(tab) {
                 document.getElementById('settings-tab-general').classList.toggle('hidden', tab !== 'general');
+                document.getElementById('settings-tab-bg').classList.toggle('hidden', tab !== 'bg');
                 document.getElementById('settings-tab-ai').classList.toggle('hidden', tab !== 'ai');
+                document.getElementById('settings-tab-idx').classList.toggle('hidden', tab !== 'idx');
+                document.getElementById('settings-tab-risk').classList.toggle('hidden', tab !== 'risk');
+                var bg = document.getElementById('tab-btn-bg');
                 var gb = document.getElementById('tab-btn-general');
                 var ab = document.getElementById('tab-btn-ai');
-                if (tab === 'general') {
-                    gb.className = 'px-4 py-1.5 text-xs font-bold rounded bg-cyan-600 text-slate-900';
-                    ab.className = 'px-4 py-1.5 text-xs font-bold rounded bg-slate-800 text-slate-400 hover:bg-slate-700';
-                } else {
-                    ab.className = 'px-4 py-1.5 text-xs font-bold rounded bg-cyan-600 text-slate-900';
-                    gb.className = 'px-4 py-1.5 text-xs font-bold rounded bg-slate-800 text-slate-400 hover:bg-slate-700';
-                }
+                var ib = document.getElementById('tab-btn-idx');
+                var rb = document.getElementById('tab-btn-risk');
+                var active = 'px-4 py-1.5 text-xs font-bold rounded bg-cyan-600 text-slate-900';
+                var inactive = 'px-4 py-1.5 text-xs font-bold rounded bg-slate-800 text-slate-400 hover:bg-slate-700';
+                gb.className = tab === 'general' ? active : inactive;
+                bg.className = tab === 'bg' ? active : inactive;
+                ab.className = tab === 'ai' ? active : inactive;
+                ib.className = tab === 'idx' ? active : inactive;
+                if (rb) rb.className = tab === 'risk' ? active : inactive;
             }
 
             // 🤖 AI Provider presets — auto-fill URL & model
@@ -1557,22 +2201,60 @@ def _render_dashboard():
                 inputs.forEach(el => el.addEventListener('input', calc));
             }
 
+            // 📋 Watchlist Helpers
+{% if is_mobile %}
+            function toggleWatchlist() {
+                var wl = document.querySelector('.watchlist-sidebar');
+                var bd = document.querySelector('.wl-backdrop');
+                wl.classList.toggle('mobile-open');
+                if (bd) bd.classList.toggle('active');
+            }
+{% endif %}
+            function reloadWatchlist() {
+                var overlay = document.getElementById('wl-loading');
+                if (overlay) overlay.classList.add('active');
+                fetch('/api/wl/render')
+                    .then(function(r) { return r.text(); })
+                    .then(function(html) {
+                        var sidebar = document.querySelector('.watchlist-sidebar');
+                        // Remove old groups from the scrollable container
+                        var box = document.getElementById('watchlist-master-box');
+                        box.querySelectorAll('.wl-cat-group').forEach(function(el) { el.remove(); });
+                        // Append new groups
+                        var frag = document.createElement('div');
+                        frag.innerHTML = html;
+                        while (frag.firstChild) {
+                            box.appendChild(frag.firstChild);
+                        }
+                        if (overlay) overlay.classList.remove('active');
+                        // Re-attach drag listeners
+                        document.querySelectorAll('.wl-cat-group').forEach(function(el) {
+                            el.addEventListener('dragenter', handleDragEnter);
+                            el.addEventListener('dragleave', handleDragLeave);
+                        });
+                    })
+                    .catch(function() {
+                        var overlay = document.getElementById('wl-loading');
+                        if (overlay) overlay.classList.remove('active');
+                    });
+            }
+
             // 📋 Watchlist Management
             function createNewCategory() {
                 const name = prompt('{{ t.wl_new_cat_prompt }}');
                 if (!name || !name.trim()) return;
                 fetch('/api/wl/add_category', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name: name.trim()}) })
-                .then(r => r.json()).then(d => { if (d.success) location.reload(); else alert(d.error); });
+                .then(r => r.json()).then(d => { if (d.success) reloadWatchlist(); else alert(d.error); });
             }
             function deleteCategory(name) {
                 if (!confirm('{{ t.wl_delete_cat }}: ' + name + '?')) return;
                 fetch('/api/wl/delete_category', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name: name}) })
-                .then(r => r.json()).then(d => { if (d.success) location.reload(); });
+                .then(r => r.json()).then(d => { if (d.success) reloadWatchlist(); });
             }
             function renameCategory(oldName, newName) {
                 if (!newName.trim() || newName.trim() === oldName) return;
                 fetch('/api/wl/rename_category', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({old_name: oldName, new_name: newName.trim()}) })
-                .then(r => r.json()).then(d => { if (d.success) location.reload(); });
+                .then(r => r.json()).then(d => { if (d.success) reloadWatchlist(); });
             }
             function addTickerToCategory(catName, el) {
                 const input = el.tagName === 'INPUT' ? el : el.previousElementSibling;
@@ -1581,13 +2263,70 @@ def _render_dashboard():
                 const marketSel = document.getElementById('wl-market-' + catName);
                 const market = marketSel ? marketSel.value : 'US';
                 fetch('/api/wl/add_ticker', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({category: catName, ticker: ticker, market: market}) })
-                .then(r => r.json()).then(d => { if (d.success) location.reload(); });
+                .then(r => r.json()).then(d => { if (d.success) reloadWatchlist(); });
             }
             function deleteTickerFromCategory(catName, ticker) {
                 fetch('/api/wl/delete_ticker', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({category: catName, ticker: ticker}) })
-                .then(r => r.json()).then(d => { if (d.success) location.reload(); });
+                .then(r => r.json()).then(d => { if (d.success) reloadWatchlist(); });
             }
 {% if is_pro %}
+            // 🖼️ Background Image (Pro)
+            function updateBgOpacity(val) {
+                document.getElementById('bg-opacity-val').textContent = parseFloat(val).toFixed(2);
+                document.documentElement.style.setProperty('--bg-opacity', val);
+                var hi = document.querySelector('input[name=bg_opacity]');
+                if (hi) hi.value = val;
+            }
+            function uploadBg(input) {
+                const file = input.files[0];
+                if (!file) return;
+                const valid = ['image/jpeg','image/png','image/gif','image/webp'];
+                if (!valid.includes(file.type)) {
+                    var warn = document.createElement('div');
+                    warn.style.cssText = 'position:fixed;top:16px;right:16px;background:#be123c;color:#fff;padding:12px 20px;border-radius:8px;z-index:9999;font-size:14px';
+                    warn.textContent = 'Unsupported format (jpg/png/gif/webp only)';
+                    document.body.appendChild(warn);
+                    setTimeout(function(){ warn.remove(); }, 3000);
+                    input.value = '';
+                    return;
+                }
+                const fd = new FormData();
+                fd.append('bg', file);
+                fetch('/api/config/upload_bg', { method: 'POST', body: fd })
+                    .then(function(r) { return r.json(); })
+                    .then(function(d) {
+                        if (d.success) {
+                            var ts = Date.now();
+                            document.getElementById('bg-preview').src = '/api/bg?' + ts;
+                            document.getElementById('bg-preview').classList.remove('hidden');
+                    document.getElementById('bg-remove-btn').classList.remove('hidden');
+                    document.body.classList.add('has-bg');
+                    var hi = document.querySelector('input[name=bg_image]');
+                    if (hi) hi.value = 'true';
+                            document.body.style.backgroundImage = 'url(/api/bg?' + ts + ')';
+                            document.body.style.backgroundSize = 'cover';
+                            document.body.style.backgroundAttachment = 'fixed';
+                    var op = document.getElementById('bg-opacity-slider');
+                    if (op) document.documentElement.style.setProperty('--bg-opacity', op.value);
+                        }
+                    });
+            }
+            function removeBg() {
+                fetch('/api/config/remove_bg', { method: 'POST' })
+                    .then(function(r) { return r.json(); })
+                    .then(function(d) {
+                        if (d.success) {
+                            document.getElementById('bg-preview').classList.add('hidden');
+                            document.getElementById('bg-remove-btn').classList.add('hidden');
+                            document.getElementById('bg-file-input').value = '';
+                    document.body.classList.remove('has-bg');
+                    document.body.style.backgroundImage = '';
+                    var hi = document.querySelector('input[name=bg_image]');
+                    if (hi) hi.value = 'false';
+                        }
+                    });
+            }
+
             // 🎯 Target Price Management
             function setTarget(ticker) {
                 const price = prompt(ticker + ' 目標價 (USD)');
@@ -1821,14 +2560,25 @@ def _render_dashboard():
         active_markets=active_markets, version=VERSION, changelog=CHANGELOG,
         today_date=date_str, config=config, is_pro=get_is_pro(),
         perf=perf,
+        earnings_data=earnings_data, earnings_lookahead_days=EARNINGS_LOOKAHEAD_DAYS,
+        risk_metrics=risk_metrics,
         total_mv_primary_raw=total_mv_primary, total_open_cost_raw=total_open_cost,
-        cash_balance=config.get("cash_balance", 0))
+        cash_balance=config.get("cash_balance", 0),
+        index_data=get_all_index_data(config), fx_matrix=fx_matrix,
+        index_list=INDEX_LIST,
+        is_mobile=is_mobile)
 
 
 @app.route('/')
 def index():
     """Main route — render dashboard directly."""
     return _render_dashboard()
+
+
+@app.route('/mobile')
+def mobile():
+    """Mobile page — responsive layout test."""
+    return _render_dashboard(is_mobile=True)
 
 
 @app.route('/dashboard')
@@ -2057,16 +2807,30 @@ def api_save_config():
         config["ai_provider"] = request.form.get("ai_provider", "gemini")
         config["ai_model"] = request.form.get("ai_model", "").strip()
         config["custom_api_url"] = request.form.get("custom_api_url", "").strip()
+        config["bg_image"] = request.form.get("bg_image", "false") == "true"
+        config["bg_opacity"] = float(request.form.get("bg_opacity", "0.55"))
     if get_is_pro():
         config["ai_timeout"] = int(request.form.get("ai_timeout", "60"))
         config["prompt_level"] = request.form.get("prompt_level", "balanced")
         config["custom_prompt"] = request.form.get("custom_prompt", "").strip()
         config["prompt_mode"] = request.form.get("prompt_mode", "style")
+        # 📉 Risk Metrics (Pro) — parse + clamp/validate (spec §7.2)
+        config["risk_period"] = int(request.form.get("risk_period", "90"))
+        if config["risk_period"] not in RISK_PERIODS: config["risk_period"] = 90
+        config["risk_method"] = request.form.get("risk_method", "historical")
+        if config["risk_method"] not in RISK_METHODS: config["risk_method"] = "historical"
+        config["risk_paths"] = max(1000, min(10000, int(request.form.get("risk_paths", "5000") or 5000)))
     config["language"] = request.form.get("language", "zh_tw")
     config["cash_balance"] = float(request.form.get("cash_balance", "0") or 0)
     config["primary_currency"] = request.form.get("primary_currency", "USD")
     config["secondary_currency"] = request.form.get("secondary_currency", "") or None
+    # 📊 進階指數：checkbox 多選，過濾只留合法 key
+    selected = request.form.getlist("extra_indices")
+    config["extra_indices"] = [k for k in selected if k in INDEX_LIST]
     save_config(config)
+    if get_is_pro():
+        _invalidate_risk_cache()   # spec §6.2 — then background recompute, don't block redirect
+        _start_risk_warmer()
     return redirect(url_for('index'))
 
 @app.route('/api/config/update_interval', methods=['POST'])
@@ -2209,13 +2973,56 @@ def api_portfolio_sell():
     save_portfolio(p)
     return redirect(url_for('index'))
 
-@app.route('/pulse_logo.png')
+@app.route('/pulse_logo.jpg')
 def pulse_logo():
-    return send_from_directory(BASE_DIR, 'pulse_logo.png')
+    return send_from_directory(BASE_DIR, 'pulse_logo.jpg')
 
 @app.route('/pulse.css')
 def pulse_css():
     return send_from_directory(BASE_DIR, 'pulse.css')
+
+@app.route('/api/config/upload_bg', methods=['POST'])
+def api_upload_bg():
+    if not get_is_pro():
+        return jsonify({'error': 'Pro feature'}), 403
+    file = request.files.get('bg')
+    if not file:
+        return jsonify({'success': False, 'error': 'No file'}), 400
+    valid = {'image/jpeg', 'image/png', 'image/gif', 'image/webp'}
+    if file.mimetype not in valid:
+        return jsonify({'success': False, 'error': 'Unsupported format'}), 400
+    os.makedirs(os.path.join(BASE_DIR, 'uploads'), exist_ok=True)
+    path = os.path.join(BASE_DIR, 'uploads', 'bg.jpg')
+    file.save(path)
+    config = load_config()
+    config['bg_image'] = True
+    save_config(config)
+    return jsonify({'success': True})
+
+@app.route('/api/config/remove_bg', methods=['POST'])
+def api_remove_bg():
+    if not get_is_pro():
+        return jsonify({'error': 'Pro feature'}), 403
+    path = os.path.join(BASE_DIR, 'uploads', 'bg.jpg')
+    if os.path.exists(path):
+        os.remove(path)
+    config = load_config()
+    config['bg_image'] = False
+    save_config(config)
+    return jsonify({'success': True})
+
+@app.route('/api/bg')
+def serve_bg():
+    path = os.path.join(BASE_DIR, 'uploads', 'bg.jpg')
+    if not os.path.exists(path):
+        return '', 404
+    return send_from_directory(os.path.dirname(path), os.path.basename(path))
+
+@app.route('/api/wl/render')
+def api_wl_render():
+    config = load_config()
+    t = get_translations(config.get("language", "zh_tw"))
+    return build_watchlist_html(t)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

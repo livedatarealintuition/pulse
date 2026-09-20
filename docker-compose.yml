@@ -1,0 +1,24 @@
+# Pulse — self-hosted portfolio dashboard
+#
+#   docker compose up -d      →  http://localhost:5000
+#
+# Your data lives in the named volume `pulse-data` (/data inside the container),
+# so `docker compose down` / image rebuilds never touch it. Back it up with:
+#   docker run --rm -v pulse-data:/data -v "$PWD":/backup alpine tar czf /backup/pulse-backup.tar.gz -C /data .
+
+services:
+  pulse:
+    build: .
+    image: pulse:latest
+    container_name: pulse
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      - pulse-data:/data
+    environment:
+      # Optional: force a currency/language default before you open Settings
+      - TZ=Asia/Hong_Kong
+
+volumes:
+  pulse-data:

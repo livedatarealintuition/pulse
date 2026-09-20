@@ -12,6 +12,7 @@ portfolio_dashboard.py
 portfolio.json
 watchlist.json
 system_config.json
+uploads/
 
 # API keys & secrets
 .env

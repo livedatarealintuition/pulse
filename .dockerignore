@@ -1,0 +1,20 @@
+.git
+.gitignore
+.github
+__pycache__/
+*.py[cod]
+*.bak*
+*.log
+
+# User data must never end up in the image
+portfolio.json
+watchlist.json
+system_config.json
+uploads/
+bak_archive/
+
+# Local dev / docs
+*.md
+screenshots/
+venv/
+.venv/
